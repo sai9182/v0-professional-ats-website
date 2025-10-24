@@ -1,7 +1,7 @@
 "use client"
 
 import { AnimatedRobot } from "./animated-robot"
-import { Handshake, Upload, CheckCircle } from "lucide-react"
+import { Users, Upload, CheckCircle } from "lucide-react"
 import { useEffect, useState } from "react"
 
 export function RobotProcessFlow() {
@@ -96,7 +96,7 @@ export function RobotProcessFlow() {
       >
         <div className="relative">
           <div className="w-20 h-20 bg-gradient-to-br from-orange-400 to-red-400 rounded-full flex items-center justify-center mb-4 shadow-lg hover:shadow-xl transition-all duration-300">
-            <Handshake className="w-10 h-10 text-white animate-pulse" />
+            <Users className="w-10 h-10 text-white animate-pulse" />
           </div>
           {currentStep === 2 && (
             <div className="absolute -top-2 -right-2">

@@ -25,6 +25,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 import Link from "next/link"
+import { analyzeResume, extractTextFromPDF, extractTextFromDOCX } from "@/lib/ats-analyzer"
 
 interface AnalysisResult {
   score: number
@@ -61,6 +62,7 @@ export default function UploadPageClient() {
   const [progress, setProgress] = useState(0)
   const [isDragOver, setIsDragOver] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setIsVisible(true)
@@ -72,12 +74,16 @@ export default function UploadPageClient() {
       uploadedFile &&
       (uploadedFile.type === "application/pdf" ||
         uploadedFile.type === "application/msword" ||
-        uploadedFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        uploadedFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        uploadedFile.name.endsWith(".pdf") ||
+        uploadedFile.name.endsWith(".doc") ||
+        uploadedFile.name.endsWith(".docx"))
     ) {
       setFile(uploadedFile)
-      analyzeResume(uploadedFile)
+      setError(null)
+      analyzeResumeFile(uploadedFile)
     } else {
-      alert("Please upload a PDF, DOC, or DOCX file")
+      setError("Please upload a PDF, DOC, or DOCX file")
     }
   }
 
@@ -85,103 +91,86 @@ export default function UploadPageClient() {
     event.preventDefault()
     setIsDragOver(false)
     const droppedFile = event.dataTransfer.files[0]
-    if (
-      droppedFile &&
-      (droppedFile.type === "application/pdf" ||
+    if (droppedFile) {
+      if (
+        droppedFile.type === "application/pdf" ||
         droppedFile.type === "application/msword" ||
-        droppedFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    ) {
-      setFile(droppedFile)
-      analyzeResume(droppedFile)
-    } else {
-      alert("Please upload a PDF, DOC, or DOCX file")
+        droppedFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        droppedFile.name.endsWith(".pdf") ||
+        droppedFile.name.endsWith(".doc") ||
+        droppedFile.name.endsWith(".docx")
+      ) {
+        setFile(droppedFile)
+        setError(null)
+        analyzeResumeFile(droppedFile)
+      } else {
+        setError("Please upload a PDF, DOC, or DOCX file")
+      }
     }
   }
 
-  const analyzeResume = async (file: File) => {
+  const analyzeResumeFile = async (file: File) => {
     setIsAnalyzing(true)
     setProgress(0)
+    setError(null)
 
-    // Animated progress
     const progressInterval = setInterval(() => {
       setProgress((prev) => {
-        if (prev >= 90) {
+        if (prev >= 85) {
           clearInterval(progressInterval)
-          return 90
+          return 85
         }
-        return prev + Math.random() * 15
+        return prev + Math.random() * 20
       })
-    }, 200)
+    }, 300)
 
-    // Simulate analysis delay
-    await new Promise((resolve) => setTimeout(resolve, 3000))
+    try {
+      let text = ""
 
-    setProgress(100)
-    clearInterval(progressInterval)
+      if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+        text = await extractTextFromPDF(file)
+      } else {
+        text = await extractTextFromDOCX(file)
+      }
 
-    // Mock analysis result with resume summary
-    const mockResult: AnalysisResult = {
-      score: 78,
-      summary:
-        "Your resume shows good structure and relevant experience, but could benefit from better keyword optimization and formatting improvements to increase ATS compatibility.",
-      resumeSummary: {
-        name: "John Smith",
-        title: "Senior Software Engineer",
-        experience: "5+ years in full-stack development",
-        education: "Bachelor's in Computer Science",
-        skills: ["JavaScript", "React", "Node.js", "Python", "SQL", "Git", "AWS"],
-        contact: {
-          email: "john.smith@email.com",
-          phone: "+1 (555) 123-4567",
-          location: "San Francisco, CA",
-        },
-      },
-      strengths: [
-        "Clear professional experience section",
-        "Relevant technical skills listed",
-        "Good use of action verbs",
-        "Proper contact information format",
-      ],
-      improvements: [
-        "Add more industry-specific keywords",
-        "Improve formatting consistency",
-        "Include quantifiable achievements",
-        "Optimize section headers for ATS",
-      ],
-      keywords: {
-        found: ["JavaScript", "React", "Node.js", "Python", "SQL", "Git"],
-        missing: ["TypeScript", "AWS", "Docker", "Kubernetes", "CI/CD", "Agile"],
-      },
-      sections: [
-        { name: "Contact Information", score: 95, feedback: "Complete and properly formatted" },
-        { name: "Professional Summary", score: 70, feedback: "Good but could be more keyword-rich" },
-        { name: "Work Experience", score: 85, feedback: "Strong experience, add more metrics" },
-        { name: "Skills", score: 60, feedback: "Missing key technical skills" },
-        { name: "Education", score: 90, feedback: "Well formatted and complete" },
-      ],
-    }
+      if (!text || text.trim().length === 0) {
+        throw new Error("Could not extract text from the file")
+      }
 
-    setTimeout(() => {
-      setAnalysisResult(mockResult)
+      setProgress(90)
+
+      const result = await analyzeResume(text, file.name)
+      setProgress(100)
+
+      setTimeout(() => {
+        setAnalysisResult(result)
+        setIsAnalyzing(false)
+        clearInterval(progressInterval)
+      }, 500)
+    } catch (err) {
+      console.error("Error analyzing resume:", err)
+      setError(
+        `Failed to analyze resume: ${err instanceof Error ? err.message : "Please try another file or ensure it's a valid resume format."}`,
+      )
       setIsAnalyzing(false)
-    }, 500)
+      clearInterval(progressInterval)
+    }
   }
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return "text-green-600"
-    if (score >= 60) return "text-yellow-600"
+    if (score >= 65) return "text-yellow-600"
     return "text-red-600"
   }
 
   const getScoreIcon = (score: number) => {
     if (score >= 80) return <CheckCircle className="h-5 w-5 text-green-600 animate-pulse" />
-    if (score >= 60) return <AlertCircle className="h-5 w-5 text-yellow-600 animate-pulse" />
+    if (score >= 65) return <AlertCircle className="h-5 w-5 text-yellow-600 animate-pulse" />
     return <XCircle className="h-5 w-5 text-red-600 animate-pulse" />
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50 relative overflow-hidden">
-      {/* Animated Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute w-96 h-96 bg-gradient-to-r from-purple-400/10 to-pink-400/10 rounded-full blur-3xl animate-pulse" />
         <div
@@ -190,7 +179,6 @@ export default function UploadPageClient() {
         />
       </div>
 
-      {/* Navigation */}
       <nav className="bg-white/90 backdrop-blur-lg border-b border-purple-100 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -199,7 +187,7 @@ export default function UploadPageClient() {
                 <FileText className="h-6 w-6 text-white group-hover:animate-pulse" />
               </div>
               <span className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                ATS Tracker + Resume Builder
+                ATS Tracker
               </span>
             </Link>
             <div className="flex items-center space-x-4">
@@ -282,6 +270,7 @@ export default function UploadPageClient() {
                         </Button>
                       </label>
                       <p className="text-sm text-gray-500 mt-4">Supports PDF, DOC, DOCX files up to 10MB</p>
+                      {error && <p className="text-red-600 mt-4 font-semibold">{error}</p>}
                     </div>
                   ) : (
                     <div className="space-y-6 animate-fade-in-up">
@@ -290,9 +279,7 @@ export default function UploadPageClient() {
                       </div>
                       <div>
                         <h3 className="text-2xl font-semibold text-gray-900 mb-4">Analyzing Your Resume</h3>
-                        <p className="text-gray-600 mb-6">
-                          Our AI robot is analyzing your resume for ATS compatibility...
-                        </p>
+                        <p className="text-gray-600 mb-6">Our AI is analyzing your resume for ATS compatibility...</p>
                         <div className="w-full max-w-md mx-auto space-y-2">
                           <Progress value={progress} className="w-full h-3 bg-purple-100" />
                           <div className="flex justify-between text-sm text-gray-500">
@@ -309,7 +296,6 @@ export default function UploadPageClient() {
           </div>
         ) : (
           <div className="space-y-8 animate-fade-in-up">
-            {/* Score Overview with Robot */}
             <Card className="border-0 shadow-2xl bg-white/80 backdrop-blur-lg hover:shadow-3xl transition-all duration-500 hover:-translate-y-1">
               <CardHeader className="text-center pb-4">
                 <div className="flex justify-center mb-4">
@@ -331,14 +317,14 @@ export default function UploadPageClient() {
                 <CardDescription className="text-lg max-w-3xl mx-auto">{analysisResult.summary}</CardDescription>
               </CardHeader>
               <CardContent className="text-center">
-                <div className="flex justify-center space-x-4">
+                <div className="flex flex-wrap gap-4 justify-center">
                   <Button
                     size="lg"
                     className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 group relative overflow-hidden"
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                     <Download className="mr-2 h-5 w-5 group-hover:animate-bounce relative z-10" />
-                    <span className="relative z-10">Download Optimized Resume</span>
+                    <span className="relative z-10">Download Report</span>
                   </Button>
                   <Button
                     size="lg"
@@ -352,7 +338,6 @@ export default function UploadPageClient() {
               </CardContent>
             </Card>
 
-            {/* Resume Summary */}
             <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
               <CardHeader>
                 <CardTitle className="flex items-center text-xl">
@@ -428,7 +413,6 @@ export default function UploadPageClient() {
             </Card>
 
             <div className="grid lg:grid-cols-2 gap-8">
-              {/* Strengths & Improvements */}
               <div className="space-y-6">
                 <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
                   <CardHeader>
@@ -481,7 +465,6 @@ export default function UploadPageClient() {
                 </Card>
               </div>
 
-              {/* Keywords & Section Scores */}
               <div className="space-y-6">
                 <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
                   <CardHeader>
@@ -553,7 +536,6 @@ export default function UploadPageClient() {
               </div>
             </div>
 
-            {/* Action Buttons */}
             <Card className="border-0 shadow-xl bg-gradient-to-r from-purple-50 to-indigo-50 hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
               <CardContent className="p-8 text-center">
                 <div className="flex justify-center mb-4">
@@ -583,6 +565,7 @@ export default function UploadPageClient() {
                       setFile(null)
                       setAnalysisResult(null)
                       setProgress(0)
+                      setError(null)
                     }}
                     className="hover:bg-purple-50 transform hover:scale-105 transition-all duration-300 group"
                   >
@@ -607,7 +590,7 @@ export default function UploadPageClient() {
             transform: translateY(0);
           }
         }
-        
+
         .animate-fade-in-up {
           animation: fade-in-up 0.8s ease-out forwards;
           opacity: 0;

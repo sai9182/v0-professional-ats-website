@@ -1,4 +1,4 @@
-import jsPDF from "jspdf"
+import html2pdf from "html2pdf.js"
 
 interface AnalysisResult {
   score: number
@@ -28,164 +28,149 @@ interface AnalysisResult {
   }[]
 }
 
-export async function generateReportPDF(analysisResult: AnalysisResult, fileName: string, downloadName: string) {
-  const doc = new jsPDF()
-  const pageWidth = doc.internal.pageSize.getWidth()
-  const pageHeight = doc.internal.pageSize.getHeight()
-  let yPosition = 20
+export function generateReportPDF(result: AnalysisResult, fileName: string) {
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+      <div style="text-align: center; margin-bottom: 30px; border-bottom: 3px solid #8b5cf6; padding-bottom: 20px;">
+        <h1 style="color: #8b5cf6; margin: 0;">ATS Resume Analysis Report</h1>
+        <p style="color: #666; margin: 10px 0 0 0;">Professional Assessment & Recommendations</p>
+      </div>
 
-  // Title
-  doc.setFontSize(24)
-  doc.setTextColor(124, 58, 237) // Purple
-  doc.text("ATS Analysis Report", 20, yPosition)
-  yPosition += 15
+      <div style="margin-bottom: 30px;">
+        <h2 style="color: #8b5cf6; border-bottom: 2px solid #8b5cf6; padding-bottom: 10px;">Overall ATS Score</h2>
+        <div style="display: flex; align-items: center; gap: 20px; margin: 20px 0;">
+          <div style="font-size: 48px; font-weight: bold; color: ${result.score >= 80 ? "#10b981" : result.score >= 65 ? "#f59e0b" : "#ef4444"};">
+            ${result.score}/100
+          </div>
+          <div style="flex: 1;">
+            <div style="background-color: #e5e7eb; height: 20px; border-radius: 10px; overflow: hidden;">
+              <div style="background: linear-gradient(to right, #8b5cf6, #ec4899); height: 100%; width: ${result.score}%; transition: width 0.3s;"></div>
+            </div>
+            <p style="margin: 10px 0 0 0; color: #666;">${result.summary}</p>
+          </div>
+        </div>
+      </div>
 
-  // Score section
-  doc.setFontSize(14)
-  doc.setTextColor(0, 0, 0)
-  doc.text(`ATS Score: ${analysisResult.score}/100`, 20, yPosition)
-  yPosition += 10
+      <div style="margin-bottom: 30px;">
+        <h2 style="color: #8b5cf6; border-bottom: 2px solid #8b5cf6; padding-bottom: 10px;">Resume Summary</h2>
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin-top: 15px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+            <div>
+              <p style="color: #666; font-size: 12px; margin: 0 0 5px 0;">Name</p>
+              <p style="font-weight: bold; margin: 0;">${result.resumeSummary.name}</p>
+            </div>
+            <div>
+              <p style="color: #666; font-size: 12px; margin: 0 0 5px 0;">Professional Title</p>
+              <p style="font-weight: bold; margin: 0;">${result.resumeSummary.title}</p>
+            </div>
+            <div>
+              <p style="color: #666; font-size: 12px; margin: 0 0 5px 0;">Email</p>
+              <p style="margin: 0;">${result.resumeSummary.contact.email}</p>
+            </div>
+            <div>
+              <p style="color: #666; font-size: 12px; margin: 0 0 5px 0;">Phone</p>
+              <p style="margin: 0;">${result.resumeSummary.contact.phone}</p>
+            </div>
+            <div>
+              <p style="color: #666; font-size: 12px; margin: 0 0 5px 0;">Location</p>
+              <p style="margin: 0;">${result.resumeSummary.contact.location}</p>
+            </div>
+            <div>
+              <p style="color: #666; font-size: 12px; margin: 0 0 5px 0;">Experience</p>
+              <p style="margin: 0;">${result.resumeSummary.experience}</p>
+            </div>
+          </div>
+          <div>
+            <p style="color: #666; font-size: 12px; margin: 0 0 5px 0;">Skills</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+              ${result.resumeSummary.skills.map((skill) => `<span style="background-color: #dbeafe; color: #1e40af; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${skill}</span>`).join("")}
+            </div>
+          </div>
+        </div>
+      </div>
 
-  // Summary
-  doc.setFontSize(11)
-  doc.setTextColor(80, 80, 80)
-  const summaryLines = doc.splitTextToSize(analysisResult.summary, pageWidth - 40)
-  doc.text(summaryLines, 20, yPosition)
-  yPosition += summaryLines.length * 5 + 10
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+        <div>
+          <h2 style="color: #10b981; border-bottom: 2px solid #10b981; padding-bottom: 10px;">Strengths</h2>
+          <ul style="margin: 15px 0; padding-left: 20px; color: #333;">
+            ${result.strengths.map((strength) => `<li style="margin-bottom: 8px;">${strength}</li>`).join("")}
+          </ul>
+        </div>
+        <div>
+          <h2 style="color: #f59e0b; border-bottom: 2px solid #f59e0b; padding-bottom: 10px;">Areas for Improvement</h2>
+          <ul style="margin: 15px 0; padding-left: 20px; color: #333;">
+            ${result.improvements.map((improvement) => `<li style="margin-bottom: 8px;">${improvement}</li>`).join("")}
+          </ul>
+        </div>
+      </div>
 
-  // Resume Summary
-  doc.setFontSize(12)
-  doc.setTextColor(124, 58, 237)
-  doc.text("Resume Summary", 20, yPosition)
-  yPosition += 8
+      <div style="margin-bottom: 30px;">
+        <h2 style="color: #8b5cf6; border-bottom: 2px solid #8b5cf6; padding-bottom: 10px;">Section Scores</h2>
+        <div style="margin-top: 15px;">
+          ${result.sections
+            .map(
+              (section) => `
+            <div style="margin-bottom: 15px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span style="font-weight: bold;">${section.name}</span>
+                <span style="color: ${section.score >= 80 ? "#10b981" : section.score >= 65 ? "#f59e0b" : "#ef4444"}; font-weight: bold;">${section.score}/100</span>
+              </div>
+              <div style="background-color: #e5e7eb; height: 8px; border-radius: 4px; overflow: hidden;">
+                <div style="background: linear-gradient(to right, #8b5cf6, #ec4899); height: 100%; width: ${section.score}%;"></div>
+              </div>
+              <p style="color: #666; font-size: 12px; margin: 5px 0 0 0;">${section.feedback}</p>
+            </div>
+          `,
+            )
+            .join("")}
+        </div>
+      </div>
 
-  doc.setFontSize(10)
-  doc.setTextColor(0, 0, 0)
-  doc.text(`Name: ${analysisResult.resumeSummary.name}`, 20, yPosition)
-  yPosition += 6
-  doc.text(`Title: ${analysisResult.resumeSummary.title}`, 20, yPosition)
-  yPosition += 6
-  doc.text(`Experience: ${analysisResult.resumeSummary.experience}`, 20, yPosition)
-  yPosition += 6
-  doc.text(`Education: ${analysisResult.resumeSummary.education}`, 20, yPosition)
-  yPosition += 6
-  doc.text(`Email: ${analysisResult.resumeSummary.contact.email}`, 20, yPosition)
-  yPosition += 6
-  doc.text(`Phone: ${analysisResult.resumeSummary.contact.phone}`, 20, yPosition)
-  yPosition += 10
+      <div style="margin-bottom: 30px;">
+        <h2 style="color: #8b5cf6; border-bottom: 2px solid #8b5cf6; padding-bottom: 10px;">Keyword Analysis</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
+          <div>
+            <h3 style="color: #10b981; margin-bottom: 10px;">Found Keywords (${result.keywords.found.length})</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              ${result.keywords.found.map((keyword) => `<span style="background-color: #dcfce7; color: #166534; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${keyword}</span>`).join("")}
+            </div>
+          </div>
+          <div>
+            <h3 style="color: #ef4444; margin-bottom: 10px;">Missing Keywords (${result.keywords.missing.length})</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+              ${result.keywords.missing.map((keyword) => `<span style="background-color: #fee2e2; color: #7f1d1d; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${keyword}</span>`).join("")}
+            </div>
+          </div>
+        </div>
+      </div>
 
-  // Skills
-  doc.setFontSize(12)
-  doc.setTextColor(124, 58, 237)
-  doc.text("Skills", 20, yPosition)
-  yPosition += 8
-  doc.setFontSize(10)
-  doc.setTextColor(0, 0, 0)
-  const skillsText = analysisResult.resumeSummary.skills.join(", ")
-  const skillsLines = doc.splitTextToSize(skillsText, pageWidth - 40)
-  doc.text(skillsLines, 20, yPosition)
-  yPosition += skillsLines.length * 5 + 10
+      <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; border-left: 4px solid #8b5cf6; margin-top: 30px;">
+        <h3 style="color: #8b5cf6; margin-top: 0;">Next Steps</h3>
+        <ol style="margin: 10px 0; padding-left: 20px;">
+          <li>Incorporate missing keywords naturally into your resume</li>
+          <li>Improve low-scoring sections with more detail and metrics</li>
+          <li>Ensure consistent formatting throughout</li>
+          <li>Tailor your resume for specific job postings</li>
+          <li>Use the AI Resume Generator to create optimized versions</li>
+        </ol>
+      </div>
 
-  // Strengths
-  doc.setFontSize(12)
-  doc.setTextColor(34, 197, 94) // Green
-  doc.text("Strengths", 20, yPosition)
-  yPosition += 8
-  doc.setFontSize(10)
-  doc.setTextColor(0, 0, 0)
-  analysisResult.strengths.forEach((strength) => {
-    const strengthLines = doc.splitTextToSize(`• ${strength}`, pageWidth - 40)
-    doc.text(strengthLines, 20, yPosition)
-    yPosition += strengthLines.length * 5
-  })
-  yPosition += 5
+      <div style="text-align: center; margin-top: 30px; color: #999; font-size: 12px; border-top: 1px solid #e5e7eb; padding-top: 15px;">
+        <p>Generated on ${new Date().toLocaleDateString()} | ATS Resume Analyzer</p>
+      </div>
+    </div>
+  `
 
-  // Check if we need a new page
-  if (yPosition > pageHeight - 40) {
-    doc.addPage()
-    yPosition = 20
+  const element = document.createElement("div")
+  element.innerHTML = html
+
+  const options = {
+    margin: 10,
+    filename: `ATS-Report-${result.resumeSummary.name}.pdf`,
+    image: { type: "jpeg", quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { orientation: "portrait", unit: "mm", format: "a4" },
   }
 
-  // Improvements
-  doc.setFontSize(12)
-  doc.setTextColor(251, 146, 60) // Orange
-  doc.text("Areas for Improvement", 20, yPosition)
-  yPosition += 8
-  doc.setFontSize(10)
-  doc.setTextColor(0, 0, 0)
-  analysisResult.improvements.forEach((improvement) => {
-    const improvementLines = doc.splitTextToSize(`• ${improvement}`, pageWidth - 40)
-    doc.text(improvementLines, 20, yPosition)
-    yPosition += improvementLines.length * 5
-  })
-  yPosition += 5
-
-  if (yPosition > pageHeight - 40) {
-    doc.addPage()
-    yPosition = 20
-  }
-
-  // Keywords Found
-  doc.setFontSize(12)
-  doc.setTextColor(34, 197, 94)
-  doc.text("Keywords Found", 20, yPosition)
-  yPosition += 8
-  doc.setFontSize(10)
-  doc.setTextColor(0, 0, 0)
-  const foundKeywordsText = analysisResult.keywords.found.join(", ")
-  const foundKeywordsLines = doc.splitTextToSize(foundKeywordsText, pageWidth - 40)
-  doc.text(foundKeywordsLines, 20, yPosition)
-  yPosition += foundKeywordsLines.length * 5 + 10
-
-  // Keywords Missing
-  doc.setFontSize(12)
-  doc.setTextColor(239, 68, 68) // Red
-  doc.text("Missing Keywords", 20, yPosition)
-  yPosition += 8
-  doc.setFontSize(10)
-  doc.setTextColor(0, 0, 0)
-  const missingKeywordsText = analysisResult.keywords.missing.join(", ")
-  const missingKeywordsLines = doc.splitTextToSize(missingKeywordsText, pageWidth - 40)
-  doc.text(missingKeywordsLines, 20, yPosition)
-  yPosition += missingKeywordsLines.length * 5 + 10
-
-  if (yPosition > pageHeight - 40) {
-    doc.addPage()
-    yPosition = 20
-  }
-
-  // Section Scores
-  doc.setFontSize(12)
-  doc.setTextColor(124, 58, 237)
-  doc.text("Section Scores", 20, yPosition)
-  yPosition += 8
-  doc.setFontSize(10)
-  doc.setTextColor(0, 0, 0)
-  analysisResult.sections.forEach((section) => {
-    doc.text(`${section.name}: ${section.score}/100`, 20, yPosition)
-    yPosition += 5
-    const feedbackLines = doc.splitTextToSize(section.feedback, pageWidth - 40)
-    doc.text(feedbackLines, 25, yPosition)
-    yPosition += feedbackLines.length * 5 + 5
-
-    if (yPosition > pageHeight - 40) {
-      doc.addPage()
-      yPosition = 20
-    }
-  })
-
-  // Save PDF
-  doc.save(downloadName)
-}
-
-export async function extractTextFromPDF(file: File): Promise<string> {
-  // This is a simplified version - for production, use pdfjs-dist
-  const text = await file.text()
-  return text
-}
-
-export async function extractTextFromDOCX(file: File): Promise<string> {
-  // This is a simplified version - for production, use docx library
-  const text = await file.text()
-  return text
+  html2pdf().set(options).from(element).save()
 }

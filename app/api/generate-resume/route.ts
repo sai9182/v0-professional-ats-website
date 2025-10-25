@@ -5,50 +5,48 @@ export async function POST(request: Request) {
   try {
     const { jobDescription, background } = await request.json()
 
-    const prompt = `You are an expert resume writer and ATS specialist. Based on the job description and user background provided, generate a tailored resume that will score highly with ATS systems.
+    const prompt = `You are an expert resume writer. Based on the job description and candidate background, generate a professional resume in JSON format.
 
 Job Description:
 ${jobDescription}
 
-User Background:
+Candidate Background:
 ${background}
 
-Generate a JSON resume with the following structure:
+Generate a resume JSON with this exact structure:
 {
-  "fullName": "string",
-  "title": "string (professional title matching the job)",
-  "email": "string",
-  "phone": "string",
-  "location": "string",
-  "summary": "string (2-3 sentences tailored to the job)",
+  "fullName": "Full Name",
+  "title": "Job Title",
+  "email": "email@example.com",
+  "phone": "+1-123-456-7890",
+  "location": "City, State",
+  "summary": "Professional summary (2-3 sentences)",
   "experiences": [
     {
-      "company": "string",
-      "position": "string",
-      "startDate": "string",
-      "endDate": "string",
-      "description": "string (2-3 bullet points with metrics)"
+      "company": "Company Name",
+      "position": "Job Title",
+      "startDate": "MM/YYYY",
+      "endDate": "MM/YYYY",
+      "description": "Detailed description with achievements and metrics"
     }
   ],
   "education": [
     {
-      "school": "string",
-      "degree": "string",
-      "field": "string",
-      "graduationDate": "string"
+      "school": "School Name",
+      "degree": "Degree",
+      "field": "Field",
+      "graduationDate": "MM/YYYY"
     }
   ],
-  "skills": ["array of relevant skills from job description"]
+  "skills": ["Skill1", "Skill2", "Skill3"]
 }
 
 Make sure to:
-1. Extract keywords from the job description
-2. Highlight relevant experience with metrics
-3. Include technical skills that match the job
-4. Use action verbs (Led, Implemented, Developed, etc.)
-5. Optimize for ATS (no graphics, clear formatting)
-
-Return only the valid JSON, no additional text.`
+1. Tailor all content to match the job description keywords
+2. Include specific metrics and achievements
+3. Use action verbs
+4. Highlight relevant skills
+5. Make it ATS-optimized`
 
     const { text } = await generateText({
       model: openai("gpt-4o"),
@@ -57,16 +55,13 @@ Return only the valid JSON, no additional text.`
 
     const resume = JSON.parse(text)
 
-    // Calculate ATS score based on keyword matches
-    const keywords = jobDescription.toLowerCase().match(/\b\w+\b/g) || []
+    // Calculate ATS score based on job match
+    const jobKeywords = jobDescription.toLowerCase().split(/\W+/)
     const resumeText = JSON.stringify(resume).toLowerCase()
-    const matchedKeywords = keywords.filter((k) => resumeText.includes(k)).length
-    const atsScore = Math.min(95, Math.floor((matchedKeywords / keywords.length) * 100))
+    const matchedKeywords = jobKeywords.filter((keyword) => resumeText.includes(keyword) && keyword.length > 3)
+    const atsScore = Math.min(95, 60 + matchedKeywords.length * 2)
 
-    return Response.json({
-      resume,
-      atsScore,
-    })
+    return Response.json({ resume, atsScore })
   } catch (error) {
     console.error("Error generating resume:", error)
     return Response.json({ error: "Failed to generate resume" }, { status: 500 })

@@ -15,17 +15,16 @@ import {
   AlertCircle,
   XCircle,
   Download,
-  Eye,
   User,
-  Briefcase,
-  GraduationCap,
   Award,
   Sparkles,
   Zap,
   TrendingUp,
+  FileQuestion,
 } from "lucide-react"
 import Link from "next/link"
 import { analyzeResume, extractTextFromPDF, extractTextFromDOCX } from "@/lib/ats-analyzer"
+import { generateReportPDF } from "@/lib/pdf-generator"
 
 interface AnalysisResult {
   score: number
@@ -63,6 +62,7 @@ export default function UploadPageClient() {
   const [isDragOver, setIsDragOver] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isValidResume, setIsValidResume] = useState(true)
 
   useEffect(() => {
     setIsVisible(true)
@@ -81,9 +81,11 @@ export default function UploadPageClient() {
     ) {
       setFile(uploadedFile)
       setError(null)
+      setIsValidResume(true)
       analyzeResumeFile(uploadedFile)
     } else {
-      setError("Please upload a PDF, DOC, or DOCX file")
+      setError("❌ Invalid file type. Please upload a PDF, DOC, or DOCX file.")
+      setIsValidResume(false)
     }
   }
 
@@ -102,11 +104,31 @@ export default function UploadPageClient() {
       ) {
         setFile(droppedFile)
         setError(null)
+        setIsValidResume(true)
         analyzeResumeFile(droppedFile)
       } else {
-        setError("Please upload a PDF, DOC, or DOCX file")
+        setError("❌ Invalid file type. Please upload a PDF, DOC, or DOCX file.")
+        setIsValidResume(false)
       }
     }
+  }
+
+  const validateResume = (text: string): boolean => {
+    const resumeKeywords = ["experience", "education", "skills", "summary", "objective", "work", "employment"]
+    const textLower = text.toLowerCase()
+    const keywordMatch = resumeKeywords.filter((keyword) => textLower.includes(keyword)).length
+
+    // Must have at least 3 resume-related keywords
+    if (keywordMatch < 3) {
+      return false
+    }
+
+    // Must have minimum text length (at least 100 characters)
+    if (text.trim().length < 100) {
+      return false
+    }
+
+    return true
   }
 
   const analyzeResumeFile = async (file: File) => {
@@ -134,9 +156,21 @@ export default function UploadPageClient() {
       }
 
       if (!text || text.trim().length === 0) {
-        throw new Error("Could not extract text from the file")
+        throw new Error("Could not extract text from the file. File may be empty or corrupted.")
       }
 
+      // Validate if it's actually a resume
+      if (!validateResume(text)) {
+        setIsValidResume(false)
+        setError(
+          "❌ This does not appear to be a resume. Please ensure the file contains:\n• Professional experience\n• Education details\n• Skills section\n• Contact information",
+        )
+        setIsAnalyzing(false)
+        clearInterval(progressInterval)
+        return
+      }
+
+      setIsValidResume(true)
       setProgress(90)
 
       const result = await analyzeResume(text, file.name)
@@ -150,7 +184,7 @@ export default function UploadPageClient() {
     } catch (err) {
       console.error("Error analyzing resume:", err)
       setError(
-        `Failed to analyze resume: ${err instanceof Error ? err.message : "Please try another file or ensure it's a valid resume format."}`,
+        `❌ Error: ${err instanceof Error ? err.message : "Please try another file or ensure it's a valid resume format."}`,
       )
       setIsAnalyzing(false)
       clearInterval(progressInterval)
@@ -169,35 +203,53 @@ export default function UploadPageClient() {
     return <XCircle className="h-5 w-5 text-red-600 animate-pulse" />
   }
 
+  const handleDownloadReport = () => {
+    if (analysisResult && file) {
+      generateReportPDF(analysisResult, `ATS-Report-${analysisResult.resumeSummary.name}.pdf`)
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50 relative overflow-hidden">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute w-96 h-96 bg-gradient-to-r from-purple-400/10 to-pink-400/10 rounded-full blur-3xl animate-pulse" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-900 to-slate-950 relative overflow-hidden">
+      {/* Animated Background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute w-96 h-96 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-full blur-3xl animate-pulse top-0 left-0" />
         <div
-          className="absolute top-1/2 right-0 w-80 h-80 bg-gradient-to-r from-indigo-400/10 to-blue-400/10 rounded-full blur-3xl animate-pulse"
+          className="absolute w-80 h-80 bg-gradient-to-r from-indigo-500/20 to-blue-500/20 rounded-full blur-3xl animate-pulse bottom-0 right-0"
           style={{ animationDelay: "1s" }}
         />
       </div>
 
-      <nav className="bg-white/90 backdrop-blur-lg border-b border-purple-100 sticky top-0 z-50">
+      <nav className="bg-black/40 border-b border-purple-500/20 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <Link href="/" className="flex items-center space-x-3 group">
-              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-2 rounded-lg shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300">
+              <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-2 rounded-lg shadow-lg group-hover:shadow-pink-500/50 group-hover:scale-110 transition-all duration-300">
                 <FileText className="h-6 w-6 text-white group-hover:animate-pulse" />
               </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                ATS Tracker
+              <span className="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                ATS Resume Analyzer
               </span>
             </Link>
             <div className="flex items-center space-x-4">
-              <Button
-                variant="outline"
-                asChild
-                className="hover:bg-purple-50 transition-all duration-300 transform hover:scale-105 bg-transparent"
-              >
-                <Link href="/builder">Resume Builder</Link>
-              </Button>
+              <Link href="/ai-generator">
+                <Button
+                  size="sm"
+                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50"
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  AI Generator
+                </Button>
+              </Link>
+              <Link href="/builder">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-purple-500/30 text-purple-300 hover:bg-purple-950/50 bg-transparent"
+                >
+                  Resume Builder
+                </Button>
+              </Link>
             </div>
           </div>
         </div>
@@ -207,25 +259,27 @@ export default function UploadPageClient() {
         <div
           className={`text-center mb-12 transition-all duration-1000 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
         >
-          <div className="inline-flex items-center px-4 py-2 bg-purple-100 rounded-full text-purple-700 text-sm font-medium mb-6 animate-pulse">
-            <Sparkles className="mr-2 h-4 w-4 animate-spin" style={{ animationDuration: "3s" }} strokeWidth={2} />
-            AI-Powered Analysis
+          <div className="inline-flex items-center px-4 py-2 bg-purple-900/50 rounded-full text-purple-300 text-sm font-medium mb-6 border border-purple-500/30 animate-pulse">
+            <Sparkles className="mr-2 h-4 w-4 animate-spin" style={{ animationDuration: "3s" }} />
+            AI-Powered ATS Analysis Engine
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">ATS Resume Analyzer</h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Upload your resume and get an instant ATS compatibility score with detailed feedback
+          <h1 className="text-5xl font-bold text-white mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+            Resume ATS Analyzer
+          </h1>
+          <p className="text-xl text-purple-200 max-w-2xl mx-auto">
+            Upload your resume and get instant ATS compatibility score with detailed feedback and actionable insights
           </p>
         </div>
 
         {!analysisResult ? (
           <div className="max-w-2xl mx-auto">
             <Card
-              className={`border-2 border-dashed transition-all duration-500 ${
+              className={`border-2 border-dashed transition-all duration-500 backdrop-blur-xl ${
                 isDragOver
-                  ? "border-purple-400 bg-purple-50 scale-105 shadow-2xl"
+                  ? "border-purple-400 bg-purple-900/30 scale-105 shadow-2xl shadow-purple-500/50"
                   : isAnalyzing
-                    ? "border-purple-300 bg-purple-25"
-                    : "border-purple-200 hover:border-purple-300 hover:shadow-xl"
+                    ? "border-purple-400/50 bg-purple-900/20"
+                    : "border-purple-500/30 hover:border-purple-500/60 hover:shadow-xl hover:shadow-purple-500/20 bg-slate-900/40"
               }`}
             >
               <CardContent className="p-12">
@@ -241,13 +295,15 @@ export default function UploadPageClient() {
                     setIsDragOver(false)
                   }}
                 >
-                  {!isAnalyzing ? (
-                    <div className="animate-fade-in-up">
+                  {!isAnalyzing && !error ? (
+                    <div className="animate-fade-in">
                       <div className="flex justify-center mb-6">
                         <AnimatedRobot size="lg" />
                       </div>
-                      <h3 className="text-2xl font-semibold text-gray-900 mb-4">Upload Your Resume</h3>
-                      <p className="text-gray-600 mb-8">Drag and drop your resume here, or click to browse files</p>
+                      <h3 className="text-3xl font-bold text-white mb-4">Upload Your Resume</h3>
+                      <p className="text-purple-200 mb-8 text-lg">
+                        Drag and drop your resume here, or click to browse files. Our AI will analyze it instantly.
+                      </p>
                       <input
                         type="file"
                         accept=".pdf,.doc,.docx"
@@ -258,319 +314,390 @@ export default function UploadPageClient() {
                       <label htmlFor="resume-upload">
                         <Button
                           size="lg"
-                          className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 cursor-pointer shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 group relative overflow-hidden"
+                          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 cursor-pointer shadow-lg hover:shadow-purple-500/50 text-white font-bold py-6 text-lg transform hover:scale-105 transition-all duration-300 group relative overflow-hidden"
                           asChild
                         >
                           <span>
-                            <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                            <Upload className="mr-2 h-5 w-5 group-hover:animate-bounce relative z-10" />
-                            <span className="relative z-10">Choose File</span>
-                            <Zap className="ml-2 h-5 w-5 group-hover:animate-pulse relative z-10" />
+                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                            <Upload className="mr-2 h-6 w-6 group-hover:animate-bounce relative z-10" />
+                            <span className="relative z-10">Choose Resume File</span>
+                            <Zap className="ml-2 h-6 w-6 group-hover:animate-pulse relative z-10" />
                           </span>
                         </Button>
                       </label>
-                      <p className="text-sm text-gray-500 mt-4">Supports PDF, DOC, DOCX files up to 10MB</p>
-                      {error && <p className="text-red-600 mt-4 font-semibold">{error}</p>}
+                      <p className="text-sm text-purple-400 mt-6">Supports PDF, DOC, DOCX files up to 10MB</p>
                     </div>
-                  ) : (
-                    <div className="space-y-6 animate-fade-in-up">
+                  ) : isAnalyzing ? (
+                    <div className="space-y-8 animate-fade-in">
                       <div className="flex justify-center">
                         <AnimatedRobot size="lg" showProcess={true} />
                       </div>
                       <div>
-                        <h3 className="text-2xl font-semibold text-gray-900 mb-4">Analyzing Your Resume</h3>
-                        <p className="text-gray-600 mb-6">Our AI is analyzing your resume for ATS compatibility...</p>
-                        <div className="w-full max-w-md mx-auto space-y-2">
-                          <Progress value={progress} className="w-full h-3 bg-purple-100" />
-                          <div className="flex justify-between text-sm text-gray-500">
-                            <span>Processing...</span>
-                            <span>{Math.round(progress)}%</span>
+                        <h3 className="text-2xl font-bold text-white mb-2">Analyzing Your Resume</h3>
+                        <p className="text-purple-300 mb-8">
+                          Our AI is scanning for ATS compatibility, keywords, and optimization opportunities...
+                        </p>
+                        <div className="w-full max-w-md mx-auto space-y-3">
+                          <Progress value={progress} className="w-full h-4 bg-purple-900/50" />
+                          <div className="flex justify-between text-sm text-purple-400">
+                            <span className="font-semibold">Scanning Resume Content</span>
+                            <span className="font-bold">{Math.round(progress)}%</span>
                           </div>
                         </div>
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </CardContent>
             </Card>
+
+            {error && !isValidResume && (
+              <Card className="border-red-500/30 bg-red-900/20 backdrop-blur mt-6 animate-bounce-in">
+                <CardContent className="p-6">
+                  <div className="flex items-start gap-4">
+                    <FileQuestion className="h-6 w-6 text-red-500 flex-shrink-0 mt-1" />
+                    <div>
+                      <h4 className="text-lg font-bold text-red-300 mb-2">Not a Resume</h4>
+                      <p className="text-red-200 mb-3">{error}</p>
+                      <p className="text-sm text-red-300">
+                        A valid resume should include professional experience, education, and skills sections.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {error && isValidResume && (
+              <Card className="border-yellow-500/30 bg-yellow-900/20 backdrop-blur mt-6 animate-bounce-in">
+                <CardContent className="p-6">
+                  <div className="flex items-start gap-4">
+                    <AlertCircle className="h-6 w-6 text-yellow-500 flex-shrink-0 mt-1" />
+                    <div>
+                      <h4 className="text-lg font-bold text-yellow-300 mb-2">Processing Error</h4>
+                      <p className="text-yellow-200">{error}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         ) : (
-          <div className="space-y-8 animate-fade-in-up">
-            <Card className="border-0 shadow-2xl bg-white/80 backdrop-blur-lg hover:shadow-3xl transition-all duration-500 hover:-translate-y-1">
-              <CardHeader className="text-center pb-4">
-                <div className="flex justify-center mb-4">
-                  <AnimatedRobot size="md" />
-                </div>
-                <div className="flex items-center justify-center space-x-3 mb-4">
-                  {getScoreIcon(analysisResult.score)}
-                  <CardTitle className="text-4xl">
-                    ATS Score:{" "}
-                    <span className={`${getScoreColor(analysisResult.score)} animate-pulse`}>
-                      {analysisResult.score}/100
-                    </span>
-                  </CardTitle>
-                  <TrendingUp className="h-6 w-6 text-purple-600 animate-bounce" />
-                </div>
-                <div className="w-full max-w-md mx-auto mb-4">
-                  <Progress value={analysisResult.score} className="w-full h-4 bg-gray-100" />
-                </div>
-                <CardDescription className="text-lg max-w-3xl mx-auto">{analysisResult.summary}</CardDescription>
-              </CardHeader>
-              <CardContent className="text-center">
-                <div className="flex flex-wrap gap-4 justify-center">
-                  <Button
-                    size="lg"
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 group relative overflow-hidden"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <Download className="mr-2 h-5 w-5 group-hover:animate-bounce relative z-10" />
-                    <span className="relative z-10">Download Report</span>
-                  </Button>
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="hover:bg-purple-50 transform hover:scale-105 transition-all duration-300 bg-transparent"
-                  >
-                    <Eye className="mr-2 h-5 w-5" />
-                    View Detailed Report
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
-              <CardHeader>
-                <CardTitle className="flex items-center text-xl">
-                  <User className="mr-3 h-6 w-6 text-purple-600 animate-pulse" strokeWidth={2} />
-                  Resume Summary
-                </CardTitle>
-                <CardDescription>Key information extracted from your resume</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    {[
-                      {
-                        icon: User,
-                        title: analysisResult.resumeSummary.name,
-                        subtitle: analysisResult.resumeSummary.title,
-                      },
-                      { icon: Briefcase, title: "Experience", subtitle: analysisResult.resumeSummary.experience },
-                      { icon: GraduationCap, title: "Education", subtitle: analysisResult.resumeSummary.education },
-                    ].map((item, index) => (
-                      <div
-                        key={index}
-                        className="flex items-start space-x-3 group hover:translate-x-2 transition-transform duration-300"
-                      >
-                        <item.icon className="h-5 w-5 text-purple-600 mt-1 group-hover:animate-pulse" strokeWidth={2} />
-                        <div>
-                          <h4 className="font-semibold text-gray-900 group-hover:text-purple-700 transition-colors duration-300">
-                            {item.title}
-                          </h4>
-                          <p className="text-gray-600">{item.subtitle}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="space-y-4">
+          <div className="space-y-8 animate-fade-in">
+            {/* Main Score Card */}
+            <div className="grid lg:grid-cols-3 gap-6">
+              <Card className="lg:col-span-2 border-purple-500/30 bg-gradient-to-br from-purple-900/40 to-pink-900/40 backdrop-blur-xl hover:shadow-2xl hover:shadow-purple-500/30 transition-all duration-500 hover:-translate-y-1">
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-2 flex items-center">
-                        <Award className="h-5 w-5 text-purple-600 mr-2 animate-pulse" strokeWidth={2} />
-                        Skills
-                      </h4>
-                      <div className="flex flex-wrap gap-2">
-                        {analysisResult.resumeSummary.skills.map((skill, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="bg-purple-100 text-purple-800 hover:bg-purple-200 transition-all duration-300 hover:scale-105 animate-fade-in-up"
-                            style={{ animationDelay: `${index * 0.1}s` }}
-                          >
-                            {skill}
-                          </Badge>
-                        ))}
-                      </div>
+                      <CardTitle className="text-white text-2xl flex items-center gap-3">
+                        <TrendingUp className="h-6 w-6 text-purple-400" />
+                        ATS Compatibility Score
+                      </CardTitle>
+                      <CardDescription className="text-purple-300 text-base mt-2">
+                        Real-time analysis based on resume content
+                      </CardDescription>
                     </div>
-
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-2">Contact Information</h4>
-                      <div className="space-y-1 text-sm text-gray-600">
-                        <p className="hover:text-purple-600 transition-colors duration-300">
-                          {analysisResult.resumeSummary.contact.email}
-                        </p>
-                        <p className="hover:text-purple-600 transition-colors duration-300">
-                          {analysisResult.resumeSummary.contact.phone}
-                        </p>
-                        <p className="hover:text-purple-600 transition-colors duration-300">
-                          {analysisResult.resumeSummary.contact.location}
-                        </p>
+                    {getScoreIcon(analysisResult.score)}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-8 mb-6">
+                    <div className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+                      {analysisResult.score}
+                    </div>
+                    <div className="flex-1">
+                      <Progress value={analysisResult.score} className="w-full h-4 bg-slate-700" />
+                      <div className="mt-3 text-sm text-purple-300">
+                        {analysisResult.score >= 80
+                          ? "✅ Excellent - Your resume is well-optimized"
+                          : analysisResult.score >= 65
+                            ? "⚠️ Good - Room for improvement"
+                            : "❌ Needs work - Apply suggestions below"}
                       </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                  <p className="text-purple-200 leading-relaxed">{analysisResult.summary}</p>
+                </CardContent>
+              </Card>
 
-            <div className="grid lg:grid-cols-2 gap-8">
-              <div className="space-y-6">
-                <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
-                  <CardHeader>
-                    <CardTitle className="flex items-center text-green-700">
-                      <CheckCircle className="mr-2 h-5 w-5 animate-pulse" />
-                      Strengths
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-3">
-                      {analysisResult.strengths.map((strength, index) => (
-                        <li
-                          key={index}
-                          className="flex items-start group hover:translate-x-2 transition-transform duration-300 animate-fade-in-up"
-                          style={{ animationDelay: `${index * 0.1}s` }}
-                        >
-                          <CheckCircle className="h-4 w-4 text-green-500 mr-3 mt-0.5 flex-shrink-0 group-hover:animate-pulse" />
-                          <span className="text-gray-700 group-hover:text-gray-900 transition-colors duration-300">
-                            {strength}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
-                  <CardHeader>
-                    <CardTitle className="flex items-center text-orange-700">
-                      <AlertCircle className="mr-2 h-5 w-5 animate-pulse" />
-                      Areas for Improvement
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-3">
-                      {analysisResult.improvements.map((improvement, index) => (
-                        <li
-                          key={index}
-                          className="flex items-start group hover:translate-x-2 transition-transform duration-300 animate-fade-in-up"
-                          style={{ animationDelay: `${index * 0.1}s` }}
-                        >
-                          <AlertCircle className="h-4 w-4 text-orange-500 mr-3 mt-0.5 flex-shrink-0 group-hover:animate-pulse" />
-                          <span className="text-gray-700 group-hover:text-gray-900 transition-colors duration-300">
-                            {improvement}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="space-y-6">
-                <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
-                  <CardHeader>
-                    <CardTitle>Keyword Analysis</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <h4 className="font-semibold text-green-700 mb-2">Found Keywords</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {analysisResult.keywords.found.map((keyword, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="bg-green-100 text-green-800 hover:bg-green-200 transition-all duration-300 hover:scale-105 animate-fade-in-up"
-                            style={{ animationDelay: `${index * 0.1}s` }}
-                          >
-                            {keyword}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-red-700 mb-2">Missing Keywords</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {analysisResult.keywords.missing.map((keyword, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="bg-red-100 text-red-800 hover:bg-red-200 transition-all duration-300 hover:scale-105 animate-fade-in-up"
-                            style={{ animationDelay: `${index * 0.1}s` }}
-                          >
-                            {keyword}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-0 shadow-xl bg-white/80 backdrop-blur-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
-                  <CardHeader>
-                    <CardTitle>Section Scores</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {analysisResult.sections.map((section, index) => (
-                        <div
-                          key={index}
-                          className="space-y-2 group hover:translate-x-1 transition-transform duration-300 animate-fade-in-up"
-                          style={{ animationDelay: `${index * 0.1}s` }}
-                        >
-                          <div className="flex justify-between items-center">
-                            <span className="font-medium text-gray-900 group-hover:text-purple-700 transition-colors duration-300">
-                              {section.name}
-                            </span>
-                            <span className={`font-bold ${getScoreColor(section.score)} group-hover:animate-pulse`}>
-                              {section.score}/100
-                            </span>
-                          </div>
-                          <Progress value={section.score} className="h-2" />
-                          <p className="text-sm text-gray-600 group-hover:text-gray-700 transition-colors duration-300">
-                            {section.feedback}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-
-            <Card className="border-0 shadow-xl bg-gradient-to-r from-purple-50 to-indigo-50 hover:shadow-2xl transition-all duration-500 hover:-translate-y-1">
-              <CardContent className="p-8 text-center">
-                <div className="flex justify-center mb-4">
-                  <AnimatedRobot size="md" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">Want to Improve Your Score?</h3>
-                <p className="text-gray-600 mb-6 max-w-2xl mx-auto">
-                  Use our resume builder with ATS-optimized templates to create a better resume
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Card className="border-purple-500/30 bg-slate-900/40 backdrop-blur-xl hover:shadow-lg hover:shadow-purple-500/30 transition-all duration-500">
+                <CardHeader>
+                  <CardTitle className="text-white">Quick Actions</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
                   <Button
-                    size="lg"
+                    onClick={handleDownloadReport}
+                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50 text-white font-bold"
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Download PDF Report
+                  </Button>
+                  <Button
                     asChild
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 group relative overflow-hidden"
+                    variant="outline"
+                    className="w-full border-purple-500/30 text-purple-300 hover:bg-purple-950/50 bg-transparent"
                   >
-                    <Link href="/builder">
-                      <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                      <FileText className="mr-2 h-5 w-5 group-hover:animate-bounce relative z-10" />
-                      <span className="relative z-10">Build Better Resume</span>
-                      <Sparkles className="ml-2 h-5 w-5 group-hover:animate-spin relative z-10" />
+                    <Link href="/ai-generator">
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generate with AI
                     </Link>
                   </Button>
                   <Button
-                    size="lg"
+                    asChild
                     variant="outline"
-                    onClick={() => {
-                      setFile(null)
-                      setAnalysisResult(null)
-                      setProgress(0)
-                      setError(null)
-                    }}
-                    className="hover:bg-purple-50 transform hover:scale-105 transition-all duration-300 group"
+                    className="w-full border-purple-500/30 text-purple-300 hover:bg-purple-950/50 bg-transparent"
                   >
-                    <Upload className="mr-2 h-5 w-5 group-hover:animate-bounce" />
+                    <Link href="/builder">
+                      <FileText className="mr-2 h-4 w-4" />
+                      Use Builder
+                    </Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Resume Summary */}
+            <Card className="border-purple-500/30 bg-slate-900/40 backdrop-blur-xl hover:shadow-lg hover:shadow-purple-500/20 transition-all duration-500">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <User className="h-6 w-6 text-purple-400" />
+                  Extracted Resume Information
+                </CardTitle>
+                <CardDescription className="text-purple-300">Key details our AI found in your resume</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid md:grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
+                      <p className="text-sm text-purple-400 font-semibold mb-1">Full Name</p>
+                      <h3 className="text-xl font-bold text-white">{analysisResult.resumeSummary.name}</h3>
+                    </div>
+                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
+                      <p className="text-sm text-purple-400 font-semibold mb-1">Professional Title</p>
+                      <p className="text-white font-semibold">{analysisResult.resumeSummary.title}</p>
+                    </div>
+                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
+                      <p className="text-sm text-purple-400 font-semibold mb-1">Experience Level</p>
+                      <p className="text-white">{analysisResult.resumeSummary.experience}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
+                      <p className="text-sm text-purple-400 font-semibold mb-2">Contact Information</p>
+                      <div className="space-y-2">
+                        <p className="text-sm text-purple-300">📧 {analysisResult.resumeSummary.contact.email}</p>
+                        <p className="text-sm text-purple-300">📱 {analysisResult.resumeSummary.contact.phone}</p>
+                        <p className="text-sm text-purple-300">📍 {analysisResult.resumeSummary.contact.location}</p>
+                      </div>
+                    </div>
+                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
+                      <p className="text-sm text-purple-400 font-semibold mb-2">Education</p>
+                      <p className="text-white">{analysisResult.resumeSummary.education}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
+                  <p className="text-sm text-purple-400 font-semibold mb-3">Top Skills Found</p>
+                  <div className="flex flex-wrap gap-2">
+                    {analysisResult.resumeSummary.skills.map((skill, index) => (
+                      <Badge
+                        key={index}
+                        className="bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg hover:shadow-purple-500/50 animate-fade-in"
+                        style={{ animationDelay: `${index * 0.05}s` }}
+                      >
+                        {skill}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Strengths and Improvements */}
+            <div className="grid lg:grid-cols-2 gap-6">
+              <Card className="border-green-500/30 bg-green-950/20 backdrop-blur-xl hover:shadow-lg hover:shadow-green-500/20 transition-all duration-500">
+                <CardHeader>
+                  <CardTitle className="text-green-400 flex items-center gap-2">
+                    <CheckCircle className="h-6 w-6" />
+                    What You're Doing Well
+                  </CardTitle>
+                  <CardDescription className="text-green-300">Keep these strengths in your resume</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-3">
+                    {analysisResult.strengths.map((strength, index) => (
+                      <li
+                        key={index}
+                        className="flex items-start gap-3 text-green-200 animate-fade-in"
+                        style={{ animationDelay: `${index * 0.1}s` }}
+                      >
+                        <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+                        <span>{strength}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card className="border-orange-500/30 bg-orange-950/20 backdrop-blur-xl hover:shadow-lg hover:shadow-orange-500/20 transition-all duration-500">
+                <CardHeader>
+                  <CardTitle className="text-orange-400 flex items-center gap-2">
+                    <AlertCircle className="h-6 w-6" />
+                    Areas for Improvement
+                  </CardTitle>
+                  <CardDescription className="text-orange-300">Apply these changes to boost your score</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-3">
+                    {analysisResult.improvements.map((improvement, index) => (
+                      <li
+                        key={index}
+                        className="flex items-start gap-3 text-orange-200 animate-fade-in"
+                        style={{ animationDelay: `${index * 0.1}s` }}
+                      >
+                        <AlertCircle className="h-5 w-5 text-orange-500 flex-shrink-0 mt-0.5" />
+                        <span>{improvement}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Section Scores */}
+            <Card className="border-purple-500/30 bg-slate-900/40 backdrop-blur-xl hover:shadow-lg hover:shadow-purple-500/20 transition-all duration-500">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <Award className="h-6 w-6 text-purple-400" />
+                  Detailed Section Analysis
+                </CardTitle>
+                <CardDescription className="text-purple-300">Score breakdown for each resume section</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-5">
+                  {analysisResult.sections.map((section, index) => (
+                    <div
+                      key={index}
+                      className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20 hover:border-purple-500/40 transition-all animate-fade-in"
+                      style={{ animationDelay: `${index * 0.1}s` }}
+                    >
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="font-bold text-white text-lg">{section.name}</h4>
+                        <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+                          {section.score}%
+                        </div>
+                      </div>
+                      <Progress value={section.score} className="mb-3 h-3 bg-slate-700" />
+                      <p className="text-sm text-purple-200">{section.feedback}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Keyword Analysis */}
+            <div className="grid lg:grid-cols-2 gap-6">
+              <Card className="border-green-500/30 bg-green-950/20 backdrop-blur-xl hover:shadow-lg hover:shadow-green-500/20 transition-all duration-500">
+                <CardHeader>
+                  <CardTitle className="text-green-400 flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5" />
+                    Found Keywords ({analysisResult.keywords.found.length})
+                  </CardTitle>
+                  <CardDescription className="text-green-300">ATS-friendly keywords in your resume</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {analysisResult.keywords.found.map((keyword, index) => (
+                      <Badge
+                        key={index}
+                        className="bg-green-900 text-green-200 border border-green-500/50 hover:bg-green-800 animate-fade-in"
+                        style={{ animationDelay: `${index * 0.05}s` }}
+                      >
+                        {keyword}
+                      </Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-red-500/30 bg-red-950/20 backdrop-blur-xl hover:shadow-lg hover:shadow-red-500/20 transition-all duration-500">
+                <CardHeader>
+                  <CardTitle className="text-red-400 flex items-center gap-2">
+                    <XCircle className="h-5 w-5" />
+                    Missing Keywords ({analysisResult.keywords.missing.length})
+                  </CardTitle>
+                  <CardDescription className="text-red-300">Consider adding these to improve ATS score</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {analysisResult.keywords.missing.map((keyword, index) => (
+                      <Badge
+                        key={index}
+                        className="bg-red-900 text-red-200 border border-red-500/50 hover:bg-red-800 animate-fade-in"
+                        style={{ animationDelay: `${index * 0.05}s` }}
+                      >
+                        {keyword}
+                      </Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Next Steps */}
+            <Card className="border-purple-500/30 bg-gradient-to-r from-purple-900/40 to-pink-900/40 backdrop-blur-xl">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center gap-2">
+                  <Sparkles className="h-6 w-6 text-purple-400 animate-spin" />
+                  Recommended Next Steps
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ol className="space-y-3 text-purple-200">
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 font-bold text-purple-400">1.</span>
+                    <span>Incorporate missing keywords naturally into your resume</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 font-bold text-purple-400">2.</span>
+                    <span>Enhance low-scoring sections with more detail and quantifiable metrics</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 font-bold text-purple-400">3.</span>
+                    <span>Use our AI Generator to create multiple optimized versions</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 font-bold text-purple-400">4.</span>
+                    <span>Tailor your resume for specific job postings</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="flex-shrink-0 font-bold text-purple-400">5.</span>
+                    <span>Re-upload to verify improvements</span>
+                  </li>
+                </ol>
+
+                <div className="mt-6 flex gap-3">
+                  <Button
+                    onClick={() => {
+                      setAnalysisResult(null)
+                      setFile(null)
+                    }}
+                    className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50"
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
                     Analyze Another Resume
+                  </Button>
+                  <Button
+                    asChild
+                    className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50"
+                  >
+                    <Link href="/ai-generator">
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      Generate New Resume
+                    </Link>
                   </Button>
                 </div>
               </CardContent>
@@ -580,10 +707,10 @@ export default function UploadPageClient() {
       </div>
 
       <style jsx>{`
-        @keyframes fade-in-up {
+        @keyframes fade-in {
           from {
             opacity: 0;
-            transform: translateY(30px);
+            transform: translateY(10px);
           }
           to {
             opacity: 1;
@@ -591,9 +718,24 @@ export default function UploadPageClient() {
           }
         }
 
-        .animate-fade-in-up {
-          animation: fade-in-up 0.8s ease-out forwards;
+        @keyframes bounce-in {
+          0% {
+            opacity: 0;
+            transform: scale(0.95) translateY(10px);
+          }
+          100% {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+
+        .animate-fade-in {
+          animation: fade-in 0.5s ease-out forwards;
           opacity: 0;
+        }
+
+        .animate-bounce-in {
+          animation: bounce-in 0.6s ease-out forwards;
         }
       `}</style>
     </div>

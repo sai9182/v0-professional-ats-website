@@ -43,32 +43,27 @@ const extractTextFromTXT = async (file: File): Promise<string> => {
   }
 }
 
-// Extract text from PDF using canvas/image rendering
+// Extract text from PDF
 const extractTextFromPDF = async (file: File): Promise<string> => {
   try {
-    // Read PDF as text by converting to array buffer
     const arrayBuffer = await file.arrayBuffer()
     const text = new TextDecoder().decode(arrayBuffer)
 
-    // Extract readable text from PDF buffer
-    // This is a basic extraction - splits by common delimiters
     const lines = text
       .split(/[\n\r]+/)
       .filter((line) => line.trim().length > 0)
-      .filter((line) => /[a-zA-Z0-9]/.test(line)) // Keep lines with alphanumeric content
-      .map((line) => line.replace(/[^\x20-\x7E]/g, "")) // Remove non-ASCII characters
+      .filter((line) => /[a-zA-Z0-9]/.test(line))
+      .map((line) => line.replace(/[^\x20-\x7E]/g, ""))
       .filter((line) => line.trim().length > 0)
 
     return lines.join("\n")
   } catch (error) {
     console.error("PDF extraction error:", error)
-    // Return empty string to trigger validation error
     return ""
   }
 }
 
 const validateAndAnalyzeResume = async (fileContent: string): Promise<AnalysisResult> => {
-  // Check if content looks like a resume
   const resumeKeywords = [
     "experience",
     "education",
@@ -99,7 +94,6 @@ const validateAndAnalyzeResume = async (fileContent: string): Promise<AnalysisRe
     }
   }
 
-  // Analyze ATS compatibility
   const atsKeywords = [
     "managed",
     "developed",
@@ -279,7 +273,6 @@ export default function UploadPageClient() {
 
     let yPosition = margin
 
-    // Header
     pdf.setFont("Helvetica", "bold")
     pdf.setFontSize(20)
     pdf.setTextColor(99, 102, 241)
@@ -287,7 +280,6 @@ export default function UploadPageClient() {
 
     yPosition += 15
 
-    // ATS Score
     pdf.setFont("Helvetica", "bold")
     pdf.setFontSize(16)
     pdf.setTextColor(0, 0, 0)
@@ -295,7 +287,6 @@ export default function UploadPageClient() {
 
     yPosition += 12
 
-    // Summary
     pdf.setFont("Helvetica", "bold")
     pdf.setFontSize(12)
     pdf.text("Summary:", margin, yPosition)
@@ -316,7 +307,6 @@ export default function UploadPageClient() {
 
     yPosition += 8
 
-    // Strengths
     if (analysis.strengths.length > 0) {
       pdf.setFont("Helvetica", "bold")
       pdf.setFontSize(12)
@@ -342,7 +332,6 @@ export default function UploadPageClient() {
 
     yPosition += 6
 
-    // Improvements
     if (analysis.improvements.length > 0) {
       if (yPosition > pageHeight - margin * 2) {
         pdf.addPage()
@@ -372,7 +361,6 @@ export default function UploadPageClient() {
 
     yPosition += 6
 
-    // Keywords
     if (yPosition > pageHeight - margin * 2) {
       pdf.addPage()
       yPosition = margin
@@ -398,7 +386,6 @@ export default function UploadPageClient() {
 
     yPosition += 6
 
-    // Feedback
     if (yPosition > pageHeight - margin * 2) {
       pdf.addPage()
       yPosition = margin
@@ -426,7 +413,6 @@ export default function UploadPageClient() {
 
   return (
     <div className="space-y-8">
-      {/* Upload Card */}
       <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-8">
         <div className="text-center">
           <h2 className="text-3xl font-bold text-white mb-4">Upload Your Resume</h2>
@@ -475,7 +461,6 @@ export default function UploadPageClient() {
         </div>
       </Card>
 
-      {/* Error Alert */}
       {error && (
         <Alert className="bg-red-500/10 border-red-500/30">
           <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
@@ -483,7 +468,6 @@ export default function UploadPageClient() {
         </Alert>
       )}
 
-      {/* Loading State */}
       {isAnalyzing && (
         <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-8">
           <div className="flex items-center justify-center gap-4">
@@ -496,10 +480,8 @@ export default function UploadPageClient() {
         </Card>
       )}
 
-      {/* Analysis Results */}
       {analysis && !isAnalyzing && (
         <div className="space-y-6">
-          {/* ATS Score Card */}
           <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-8">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
               <div>
@@ -534,7 +516,6 @@ export default function UploadPageClient() {
             <p className="text-slate-300 leading-relaxed">{analysis.summary}</p>
           </Card>
 
-          {/* Strengths */}
           {analysis.strengths.length > 0 && (
             <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-emerald-500/20 p-8">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -554,7 +535,6 @@ export default function UploadPageClient() {
             </Card>
           )}
 
-          {/* Improvements */}
           {analysis.improvements.length > 0 && (
             <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-amber-500/20 p-8">
               <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -574,7 +554,6 @@ export default function UploadPageClient() {
             </Card>
           )}
 
-          {/* Keywords */}
           <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-8">
             <h3 className="text-xl font-bold text-white mb-6">Keywords Analysis</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -613,7 +592,6 @@ export default function UploadPageClient() {
             </div>
           </Card>
 
-          {/* Feedback */}
           <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-blue-500/20 p-8">
             <h3 className="text-xl font-bold text-white mb-4">Detailed Feedback</h3>
             <p className="text-slate-300 leading-relaxed mb-6">{analysis.feedback}</p>

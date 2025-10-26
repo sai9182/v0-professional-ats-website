@@ -2,45 +2,45 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
+import { ThemeProvider } from "@/components/theme-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://sai-ats-analyzer.vercel.app"),
   title: {
-    default: "sai",
-    template: "sai",
+    default: "SAI - Professional ATS Resume Analyzer",
+    template: "%s | SAI Resume Analyzer",
   },
   description:
-    "Get instant ATS compatibility scores for your resume. Build professional resumes with our ATS-optimized templates. Powered by Sai.dev",
-  keywords: "ATS resume analyzer, resume builder, ATS score, job application tracker, resume optimization, sai.dev",
-  authors: [{ name: "Sai.dev" }],
-  creator: "Sai.dev",
-  publisher: "Sai.dev",
+    "Professional ATS resume analyzer and builder. Get real-time ATS scores, AI-powered suggestions, and build optimized resumes for your dream job.",
+  keywords: "ATS resume analyzer, resume builder, ATS score, job application, resume optimization",
+  authors: [{ name: "SAI.dev" }],
+  creator: "SAI.dev",
+  publisher: "SAI.dev",
   openGraph: {
-    title: "sai",
-    description:
-      "Get instant ATS compatibility scores for your resume. Build professional resumes with our ATS-optimized templates.",
-    siteName: "sai",
+    title: "SAI - Professional ATS Resume Analyzer",
+    description: "Get instant ATS compatibility scores and build professional resumes with AI assistance.",
+    siteName: "SAI Resume Analyzer",
     locale: "en_US",
     type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "sai",
-    description:
-      "Get instant ATS compatibility scores for your resume. Build professional resumes with our ATS-optimized templates.",
+    title: "SAI - Professional ATS Resume Analyzer",
+    description: "Get instant ATS compatibility scores and AI-powered resume optimization.",
     creator: "@saidev",
   },
   robots: {
     index: true,
     follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      "max-video-preview": -1,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-    },
   },
     generator: 'v0.app'
 }
@@ -51,18 +51,17 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
-        <title>sai</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-        <link rel="manifest" href="/site.webmanifest" />
         <meta name="theme-color" content="#7c3aed" />
       </head>
-      <body className={inter.className}>{children}</body>
+      <body className={`${inter.className} bg-slate-950`}>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   )
 }

@@ -2,390 +2,182 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Sparkles, Loader2, Download, Eye, Target, Zap, FileText, Copy, Check } from "lucide-react"
-import Link from "next/link"
+import { Navigation } from "@/components/navigation"
+import { AIChatSidebar } from "@/components/ai-chat-sidebar"
+import { Wand2, Loader2, Download } from "lucide-react"
+import jsPDF from "jspdf"
 
-interface GeneratedResume {
-  fullName: string
-  title: string
-  email: string
-  phone: string
-  location: string
-  summary: string
-  experiences: Array<{
-    company: string
-    position: string
-    startDate: string
-    endDate: string
-    description: string
-  }>
-  education: Array<{
-    school: string
-    degree: string
-    field: string
-    graduationDate: string
-  }>
-  skills: string[]
-}
-
-export default function AIResumeGenerator() {
+export default function AIGeneratorPage() {
   const [jobDescription, setJobDescription] = useState("")
-  const [yourBackground, setYourBackground] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [generatedResume, setGeneratedResume] = useState<GeneratedResume | null>(null)
-  const [atsScore, setAtsScore] = useState(0)
-  const [copied, setCopied] = useState(false)
+  const [userBackground, setUserBackground] = useState("")
+  const [generatedResume, setGeneratedResume] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
 
-  const generateResume = async () => {
-    if (!jobDescription.trim() || !yourBackground.trim()) {
-      alert("Please fill in both the job description and your background")
+  const handleGenerateResume = async () => {
+    if (!jobDescription.trim() || !userBackground.trim()) {
+      alert("Please fill in both job description and background")
       return
     }
 
-    setLoading(true)
+    setIsLoading(true)
     try {
       const response = await fetch("/api/generate-resume", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           jobDescription,
-          background: yourBackground,
+          userBackground,
         }),
       })
 
+      if (!response.ok) throw new Error("Failed to generate resume")
+
       const data = await response.json()
       setGeneratedResume(data.resume)
-      setAtsScore(data.atsScore)
     } catch (error) {
-      console.error("Error generating resume:", error)
-      alert("Error generating resume. Please try again.")
+      console.error("Generation error:", error)
+      alert("Failed to generate resume. Please try again.")
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const downloadResume = () => {
+    if (!generatedResume) return
+
+    const pdf = new jsPDF()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const margin = 15
+    const maxWidth = pageWidth - margin * 2
+
+    let yPosition = margin
+
+    // Add gradient header
+    pdf.setFont("Helvetica", "bold")
+    pdf.setFontSize(20)
+    pdf.text("AI-Generated Resume", margin, yPosition)
+
+    yPosition += 15
+
+    // Split text into pages
+    const lines = pdf.splitTextToSize(generatedResume, maxWidth)
+
+    pdf.setFont("Helvetica", "normal")
+    pdf.setFontSize(11)
+
+    lines.forEach((line: string) => {
+      if (yPosition > pageHeight - margin) {
+        pdf.addPage()
+        yPosition = margin
+      }
+      pdf.text(line, margin, yPosition)
+      yPosition += 7
+    })
+
+    pdf.save("ai-generated-resume.pdf")
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-900 to-slate-950 relative overflow-hidden">
-      {/* Animated Background */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute w-96 h-96 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-full blur-3xl animate-pulse top-0 left-0" />
-        <div
-          className="absolute w-80 h-80 bg-gradient-to-r from-indigo-500/20 to-blue-500/20 rounded-full blur-3xl animate-pulse bottom-0 right-0"
-          style={{ animationDelay: "1s" }}
-        />
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-900/20 to-slate-950">
+      <Navigation />
+      <AIChatSidebar />
 
-      {/* Navigation */}
-      <nav className="bg-black/40 border-b border-purple-500/20 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <Link href="/" className="flex items-center space-x-3 group">
-              <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-2 rounded-lg shadow-lg group-hover:shadow-pink-500/50 group-hover:scale-110 transition-all duration-300">
-                <Sparkles className="h-6 w-6 text-white group-hover:animate-pulse" />
-              </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                AI Resume Generator
-              </span>
-            </Link>
-            <div className="flex items-center space-x-4">
-              <Link href="/upload">
-                <Button
-                  size="sm"
-                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50"
-                >
-                  <Target className="mr-2 h-4 w-4" />
-                  ATS Analyzer
-                </Button>
-              </Link>
-              <Link href="/builder">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-purple-500/30 text-purple-300 hover:bg-purple-950/50 bg-transparent"
-                >
-                  Resume Builder
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
-        <div className="mb-12 animate-fade-in">
-          <h1 className="text-5xl font-bold text-white mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent flex items-center gap-3">
-            <Sparkles className="h-12 w-12 text-purple-400 animate-pulse" />
-            AI-Powered Resume Generator
+      <main className="max-w-7xl mx-auto px-4 py-12">
+        <div className="mb-12 text-center">
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent mb-4 animate-fade-in">
+            AI Resume Generator
           </h1>
-          <p className="text-xl text-purple-200 max-w-2xl">
-            Paste a job description and your background. Our AI will create an optimized resume tailored to the role.
+          <p className="text-xl text-slate-300 animate-fade-in-delay">
+            Generate a tailored resume using AI based on job description and your background
           </p>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Input Section */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Job Description Input */}
-            <Card className="border-purple-500/30 bg-slate-900/40 backdrop-blur-xl hover:border-purple-500/60 transition-all duration-300">
-              <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-purple-400" />
-                  Job Description
-                </CardTitle>
-                <CardDescription className="text-purple-300">
-                  Paste the full job posting you're targeting
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={jobDescription}
-                  onChange={(e) => setJobDescription(e.target.value)}
-                  placeholder="Paste the complete job description here... Include title, responsibilities, requirements, and qualifications..."
-                  className="bg-slate-800 border-purple-500/30 text-white placeholder-gray-500 min-h-[250px] resize-none focus:border-purple-500/60"
-                  rows={10}
-                />
-              </CardContent>
-            </Card>
+          <div className="lg:col-span-1 space-y-6">
+            <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-6 hover:border-purple-500/50 transition-all duration-300">
+              <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <Wand2 className="text-purple-400" size={24} />
+                Job Details
+              </h2>
 
-            {/* Background Input */}
-            <Card className="border-purple-500/30 bg-slate-900/40 backdrop-blur-xl hover:border-purple-500/60 transition-all duration-300">
-              <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
-                  <Target className="h-5 w-5 text-purple-400" />
-                  Your Professional Background
-                </CardTitle>
-                <CardDescription className="text-purple-300">
-                  Describe your experience, skills, and achievements
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={yourBackground}
-                  onChange={(e) => setYourBackground(e.target.value)}
-                  placeholder="Describe your career highlights, technical skills, project experience, education, certifications, and any relevant achievements with metrics..."
-                  className="bg-slate-800 border-purple-500/30 text-white placeholder-gray-500 min-h-[250px] resize-none focus:border-purple-500/60"
-                  rows={10}
-                />
-              </CardContent>
-            </Card>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Job Description</label>
+                  <Textarea
+                    value={jobDescription}
+                    onChange={(e) => setJobDescription(e.target.value)}
+                    placeholder="Paste the job description here..."
+                    className="min-h-[150px] bg-slate-800 border-purple-500/30 text-white placeholder-slate-400"
+                  />
+                </div>
 
-            {/* Generate Button */}
-            <Button
-              onClick={generateResume}
-              disabled={loading || !jobDescription.trim() || !yourBackground.trim()}
-              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-bold py-8 text-lg rounded-lg transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-purple-500/50"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-                  <span>Generating Your AI-Optimized Resume...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="mr-2 h-6 w-6" />
-                  Generate Resume with AI
-                  <Zap className="ml-2 h-6 w-6" />
-                </>
-              )}
-            </Button>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Your Background</label>
+                  <Textarea
+                    value={userBackground}
+                    onChange={(e) => setUserBackground(e.target.value)}
+                    placeholder="Tell us about your experience, skills, and achievements..."
+                    className="min-h-[150px] bg-slate-800 border-purple-500/30 text-white placeholder-slate-400"
+                  />
+                </div>
+
+                <Button
+                  onClick={handleGenerateResume}
+                  disabled={isLoading}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold py-6"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="mr-2 h-5 w-5" />
+                      Generate Resume
+                    </>
+                  )}
+                </Button>
+              </div>
+            </Card>
           </div>
 
-          {/* Preview Section */}
-          <div className="space-y-6">
+          {/* Output Section */}
+          <div className="lg:col-span-2">
             {generatedResume ? (
-              <>
-                {/* ATS Score Card */}
-                <Card className="bg-gradient-to-br from-purple-900/50 to-pink-900/50 border-purple-500/30 backdrop-blur animate-scale-in shadow-2xl">
-                  <CardHeader>
-                    <CardTitle className="text-white flex items-center gap-2">
-                      <Target className="h-5 w-5 text-purple-400" />
-                      ATS Compatibility
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center">
-                      <div className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-4">
-                        {atsScore}%
-                      </div>
-                      <Progress value={atsScore} className="mb-4 h-4 bg-slate-700" />
-                      <p className="text-purple-200 text-sm font-semibold">
-                        {atsScore >= 85
-                          ? "✅ Excellent - Highly optimized"
-                          : atsScore >= 70
-                            ? "⚠️ Good - Room for improvement"
-                            : "❌ Needs optimization"}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Generated Resume Preview */}
-                <Card className="bg-slate-800/50 border-purple-500/30 backdrop-blur max-h-[600px] overflow-y-auto">
-                  <CardHeader className="sticky top-0 bg-slate-800/80 backdrop-blur border-b border-purple-500/30">
-                    <CardTitle className="text-white flex items-center justify-between">
-                      <span className="flex items-center gap-2">
-                        <FileText className="h-5 w-5 text-purple-400" />
-                        Preview
-                      </span>
-                      <Button
-                        onClick={() => copyToClipboard(JSON.stringify(generatedResume, null, 2))}
-                        size="sm"
-                        variant="outline"
-                        className="border-purple-500/30 text-purple-300 hover:bg-purple-950/50"
-                      >
-                        {copied ? (
-                          <>
-                            <Check className="h-4 w-4 mr-1" />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-4 w-4 mr-1" />
-                            Copy
-                          </>
-                        )}
-                      </Button>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    <div className="bg-white text-gray-900 rounded-lg p-6 text-sm space-y-4">
-                      <div className="border-b pb-4">
-                        <h2 className="text-2xl font-bold">{generatedResume.fullName}</h2>
-                        <p className="text-lg font-semibold text-purple-600">{generatedResume.title}</p>
-                        <div className="text-gray-600 text-xs space-y-1 mt-2">
-                          <div>📧 {generatedResume.email}</div>
-                          <div>📱 {generatedResume.phone}</div>
-                          <div>📍 {generatedResume.location}</div>
-                        </div>
-                      </div>
-
-                      {generatedResume.summary && (
-                        <div>
-                          <h3 className="font-bold text-gray-900 mb-2 text-purple-700">PROFESSIONAL SUMMARY</h3>
-                          <p className="text-gray-700 text-xs leading-relaxed">{generatedResume.summary}</p>
-                        </div>
-                      )}
-
-                      {generatedResume.skills.length > 0 && (
-                        <div>
-                          <h3 className="font-bold text-gray-900 mb-2 text-purple-700">TECHNICAL SKILLS</h3>
-                          <div className="flex flex-wrap gap-1">
-                            {generatedResume.skills.map((skill) => (
-                              <Badge key={skill} variant="secondary" className="text-xs">
-                                {skill}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {generatedResume.experiences.length > 0 && (
-                        <div>
-                          <h3 className="font-bold text-gray-900 mb-2 text-purple-700">PROFESSIONAL EXPERIENCE</h3>
-                          <div className="space-y-3">
-                            {generatedResume.experiences.map((exp, idx) => (
-                              <div key={idx} className="text-xs">
-                                <div className="font-bold text-gray-900">{exp.position}</div>
-                                <div className="text-gray-600">
-                                  {exp.company} | {exp.startDate} - {exp.endDate}
-                                </div>
-                                <p className="text-gray-700 mt-1">{exp.description}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {generatedResume.education.length > 0 && (
-                        <div>
-                          <h3 className="font-bold text-gray-900 mb-2 text-purple-700">EDUCATION</h3>
-                          <div className="space-y-2">
-                            {generatedResume.education.map((edu, idx) => (
-                              <div key={idx} className="text-xs">
-                                <div className="font-bold text-gray-900">
-                                  {edu.degree} in {edu.field}
-                                </div>
-                                <div className="text-gray-600">
-                                  {edu.school} | {edu.graduationDate}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Action Buttons */}
-                <div className="flex flex-col gap-3">
-                  <Button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50">
-                    <Download className="mr-2 h-4 w-4" />
-                    Download as PDF
-                  </Button>
+              <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-8 h-full">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-white">Generated Resume</h2>
                   <Button
+                    onClick={downloadResume}
                     variant="outline"
-                    className="w-full border-purple-500/30 text-purple-300 hover:bg-purple-950/50 bg-transparent"
+                    className="border-purple-500/30 hover:bg-purple-500/10 bg-transparent"
                   >
-                    <Eye className="mr-2 h-4 w-4" />
-                    Edit in Builder
+                    <Download size={18} className="mr-2" />
+                    Download PDF
                   </Button>
                 </div>
-              </>
+                <div className="bg-slate-800/50 rounded-lg p-6 text-slate-100 text-sm leading-relaxed max-h-[600px] overflow-y-auto prose prose-invert">
+                  <div className="whitespace-pre-wrap text-xs font-mono">{generatedResume}</div>
+                </div>
+              </Card>
             ) : (
-              <Card className="bg-slate-800/50 border-purple-500/30 backdrop-blur h-full flex items-center justify-center min-h-[400px]">
-                <CardContent className="text-center py-12">
-                  <Sparkles className="h-16 w-16 text-purple-400 mx-auto mb-6 opacity-50" />
-                  <p className="text-purple-300 text-lg font-semibold">Your AI Resume will appear here</p>
-                  <p className="text-purple-400 text-sm mt-2">Fill in both sections and click generate to begin</p>
-                </CardContent>
+              <Card className="bg-gradient-to-br from-slate-900/50 to-slate-800/50 border-purple-500/20 border-dashed p-8 h-[500px] flex items-center justify-center">
+                <div className="text-center">
+                  <Wand2 className="w-16 h-16 text-purple-400/50 mx-auto mb-4" />
+                  <p className="text-slate-400 text-lg">
+                    Fill in the job details and click generate to create your AI-powered resume
+                  </p>
+                </div>
               </Card>
             )}
           </div>
         </div>
-      </div>
-
-      <style jsx>{`
-        @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        @keyframes scale-in {
-          from {
-            opacity: 0;
-            transform: scale(0.95);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-
-        .animate-fade-in {
-          animation: fade-in 0.6s ease-out;
-        }
-
-        .animate-scale-in {
-          animation: scale-in 0.5s ease-out;
-        }
-      `}</style>
+      </main>
     </div>
   )
 }

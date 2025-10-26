@@ -1,743 +1,643 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Badge } from "@/components/ui/badge"
-import { AnimatedRobot } from "@/components/animated-robot"
-import {
-  Upload,
-  FileText,
-  CheckCircle,
-  AlertCircle,
-  XCircle,
-  Download,
-  User,
-  Award,
-  Sparkles,
-  Zap,
-  TrendingUp,
-  FileQuestion,
-} from "lucide-react"
-import Link from "next/link"
-import { analyzeResume, extractTextFromPDF, extractTextFromDOCX } from "@/lib/ats-analyzer"
-import { generateReportPDF } from "@/lib/pdf-generator"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Download, AlertCircle, CheckCircle, Loader2, Upload } from "lucide-react"
+import jsPDF from "jspdf"
 
 interface AnalysisResult {
-  score: number
+  isResume: boolean
+  atsScore: number
   summary: string
-  resumeSummary: {
-    name: string
-    title: string
-    experience: string
-    education: string
-    skills: string[]
-    contact: {
-      email: string
-      phone: string
-      location: string
-    }
-  }
   strengths: string[]
   improvements: string[]
-  keywords: {
-    found: string[]
-    missing: string[]
+  keywords: string[]
+  missingKeywords: string[]
+  feedback: string
+}
+
+// Extract text from DOCX
+const extractTextFromDOCX = async (file: File): Promise<string> => {
+  try {
+    const mammoth = await import("mammoth")
+    const arrayBuffer = await file.arrayBuffer()
+    const result = await mammoth.extractRawText({ arrayBuffer })
+    return result.value || ""
+  } catch (error) {
+    console.error("DOCX extraction error:", error)
+    throw new Error("Failed to extract text from DOCX file")
   }
-  sections: {
-    name: string
-    score: number
-    feedback: string
-  }[]
+}
+
+// Extract text from TXT
+const extractTextFromTXT = async (file: File): Promise<string> => {
+  try {
+    return await file.text()
+  } catch (error) {
+    console.error("TXT extraction error:", error)
+    throw new Error("Failed to extract text from TXT file")
+  }
+}
+
+// Extract text from PDF using canvas/image rendering
+const extractTextFromPDF = async (file: File): Promise<string> => {
+  try {
+    // Read PDF as text by converting to array buffer
+    const arrayBuffer = await file.arrayBuffer()
+    const text = new TextDecoder().decode(arrayBuffer)
+
+    // Extract readable text from PDF buffer
+    // This is a basic extraction - splits by common delimiters
+    const lines = text
+      .split(/[\n\r]+/)
+      .filter((line) => line.trim().length > 0)
+      .filter((line) => /[a-zA-Z0-9]/.test(line)) // Keep lines with alphanumeric content
+      .map((line) => line.replace(/[^\x20-\x7E]/g, "")) // Remove non-ASCII characters
+      .filter((line) => line.trim().length > 0)
+
+    return lines.join("\n")
+  } catch (error) {
+    console.error("PDF extraction error:", error)
+    // Return empty string to trigger validation error
+    return ""
+  }
+}
+
+const validateAndAnalyzeResume = async (fileContent: string): Promise<AnalysisResult> => {
+  // Check if content looks like a resume
+  const resumeKeywords = [
+    "experience",
+    "education",
+    "skills",
+    "work",
+    "employment",
+    "degree",
+    "qualification",
+    "contact",
+    "email",
+    "phone",
+  ]
+
+  const contentLower = fileContent.toLowerCase()
+  const resumeKeywordCount = resumeKeywords.filter((keyword) => contentLower.includes(keyword)).length
+
+  if (resumeKeywordCount < 3 || fileContent.trim().length < 100) {
+    return {
+      isResume: false,
+      atsScore: 0,
+      summary: "❌ This does not appear to be a valid resume.",
+      strengths: [],
+      improvements: [],
+      keywords: [],
+      missingKeywords: [],
+      feedback:
+        "Please upload a valid resume file with standard sections like experience, education, and skills. A resume should contain contact information, work experience, education details, and skills.",
+    }
+  }
+
+  // Analyze ATS compatibility
+  const atsKeywords = [
+    "managed",
+    "developed",
+    "implemented",
+    "led",
+    "designed",
+    "achieved",
+    "improved",
+    "certified",
+    "award",
+    "responsible",
+    "created",
+    "delivered",
+  ]
+
+  const keywordsFound = atsKeywords.filter((keyword) => contentLower.includes(keyword))
+
+  const sections = {
+    hasContact: contentLower.includes("email") || contentLower.includes("phone") || contentLower.includes("@"),
+    hasSummary:
+      contentLower.includes("professional summary") ||
+      contentLower.includes("objective") ||
+      contentLower.includes("about"),
+    hasExperience:
+      contentLower.includes("experience") || contentLower.includes("work") || contentLower.includes("employment"),
+    hasEducation:
+      contentLower.includes("education") || contentLower.includes("degree") || contentLower.includes("university"),
+    hasSkills: contentLower.includes("skills") || contentLower.includes("technical"),
+    hasCertifications: contentLower.includes("certification") || contentLower.includes("certified"),
+  }
+
+  const sectionScore = Object.values(sections).filter(Boolean).length
+  const baseScore = 30 + sectionScore * 10
+  const keywordBonus = Math.min(keywordsFound.length * 3, 30)
+  const atsScore = Math.min(100, Math.round(baseScore + keywordBonus))
+
+  const strengths: string[] = []
+  const improvements: string[] = []
+
+  if (sections.hasContact) strengths.push("✓ Clear contact information included")
+  else improvements.push("Add contact information (email, phone, location)")
+
+  if (sections.hasSummary) strengths.push("✓ Professional summary present")
+  else improvements.push("Consider adding a professional summary or objective")
+
+  if (sections.hasExperience) strengths.push("✓ Work experience well documented")
+  else improvements.push("Include detailed work experience with achievements")
+
+  if (sections.hasEducation) strengths.push("✓ Education section included")
+  else improvements.push("Add your education details and degrees")
+
+  if (sections.hasSkills) strengths.push("✓ Skills section present")
+  else improvements.push("Create a dedicated skills section with relevant technologies")
+
+  if (sections.hasCertifications) strengths.push("✓ Certifications and credentials included")
+  else improvements.push("Add relevant professional certifications if applicable")
+
+  if (keywordsFound.length > 5) strengths.push("✓ Strong action verbs and achievements")
+  else improvements.push("Use more action verbs (managed, developed, led, designed) and quantifiable achievements")
+
+  if (contentLower.includes("linkedin") || contentLower.includes("github"))
+    strengths.push("✓ Professional profiles linked")
+  else improvements.push("Add links to professional profiles (LinkedIn, GitHub, Portfolio)")
+
+  if (contentLower.includes("%") || contentLower.includes("increased") || contentLower.includes("decreased"))
+    strengths.push("✓ Quantified metrics and results")
+  else improvements.push("Add metrics and percentages to demonstrate impact")
+
+  const missingKeywords = [
+    "leadership",
+    "teamwork",
+    "communication",
+    "problem-solving",
+    "analysis",
+    "collaboration",
+    "project management",
+  ].filter((keyword) => !contentLower.includes(keyword))
+
+  const statusMessage =
+    atsScore >= 80
+      ? "✓ Excellent - Your resume is well-optimized for ATS systems"
+      : atsScore >= 60
+        ? "◐ Good - Some improvements needed for better ATS compatibility"
+        : "✗ Needs Work - Apply the suggestions below to improve your score"
+
+  return {
+    isResume: true,
+    atsScore,
+    summary: `Your resume has been analyzed. ATS Score: ${atsScore}/100. ${statusMessage}`,
+    strengths,
+    improvements,
+    keywords: keywordsFound,
+    missingKeywords,
+    feedback: `Your resume contains ${sectionScore} out of 6 recommended sections. ${
+      atsScore >= 80
+        ? "Great job! Your resume is well-structured and highly optimized for ATS systems."
+        : atsScore >= 60
+          ? "Your resume has good structure but needs optimization in the areas mentioned above."
+          : "Apply the improvements above to increase your ATS compatibility score and improve your chances of passing through ATS filters."
+    }`,
+  }
 }
 
 export default function UploadPageClient() {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
-  const [progress, setProgress] = useState(0)
-  const [isDragOver, setIsDragOver] = useState(false)
-  const [isVisible, setIsVisible] = useState(false)
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [isValidResume, setIsValidResume] = useState(true)
 
-  useEffect(() => {
-    setIsVisible(true)
-  }, [])
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const uploadedFile = event.target.files?.[0]
-    if (
-      uploadedFile &&
-      (uploadedFile.type === "application/pdf" ||
-        uploadedFile.type === "application/msword" ||
-        uploadedFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-        uploadedFile.name.endsWith(".pdf") ||
-        uploadedFile.name.endsWith(".doc") ||
-        uploadedFile.name.endsWith(".docx"))
-    ) {
-      setFile(uploadedFile)
-      setError(null)
-      setIsValidResume(true)
-      analyzeResumeFile(uploadedFile)
-    } else {
-      setError("❌ Invalid file type. Please upload a PDF, DOC, or DOCX file.")
-      setIsValidResume(false)
-    }
-  }
+    if (!uploadedFile) return
 
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    setIsDragOver(false)
-    const droppedFile = event.dataTransfer.files[0]
-    if (droppedFile) {
-      if (
-        droppedFile.type === "application/pdf" ||
-        droppedFile.type === "application/msword" ||
-        droppedFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-        droppedFile.name.endsWith(".pdf") ||
-        droppedFile.name.endsWith(".doc") ||
-        droppedFile.name.endsWith(".docx")
-      ) {
-        setFile(droppedFile)
-        setError(null)
-        setIsValidResume(true)
-        analyzeResumeFile(droppedFile)
-      } else {
-        setError("❌ Invalid file type. Please upload a PDF, DOC, or DOCX file.")
-        setIsValidResume(false)
-      }
-    }
-  }
+    const validTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+    ]
 
-  const validateResume = (text: string): boolean => {
-    const resumeKeywords = ["experience", "education", "skills", "summary", "objective", "work", "employment"]
-    const textLower = text.toLowerCase()
-    const keywordMatch = resumeKeywords.filter((keyword) => textLower.includes(keyword)).length
-
-    // Must have at least 3 resume-related keywords
-    if (keywordMatch < 3) {
-      return false
+    if (!validTypes.includes(uploadedFile.type) && !uploadedFile.name.match(/\.(pdf|docx|txt)$/i)) {
+      setError("❌ Invalid file type. Please upload a PDF, DOCX, or TXT file.")
+      return
     }
 
-    // Must have minimum text length (at least 100 characters)
-    if (text.trim().length < 100) {
-      return false
-    }
-
-    return true
-  }
-
-  const analyzeResumeFile = async (file: File) => {
-    setIsAnalyzing(true)
-    setProgress(0)
+    setFile(uploadedFile)
     setError(null)
-
-    const progressInterval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 85) {
-          clearInterval(progressInterval)
-          return 85
-        }
-        return prev + Math.random() * 20
-      })
-    }, 300)
+    setAnalysis(null)
+    setIsAnalyzing(true)
 
     try {
-      let text = ""
+      let fileContent = ""
 
-      if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-        text = await extractTextFromPDF(file)
+      if (uploadedFile.type === "application/pdf" || uploadedFile.name.endsWith(".pdf")) {
+        fileContent = await extractTextFromPDF(uploadedFile)
+      } else if (
+        uploadedFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        uploadedFile.name.endsWith(".docx")
+      ) {
+        fileContent = await extractTextFromDOCX(uploadedFile)
       } else {
-        text = await extractTextFromDOCX(file)
+        fileContent = await extractTextFromTXT(uploadedFile)
       }
 
-      if (!text || text.trim().length === 0) {
-        throw new Error("Could not extract text from the file. File may be empty or corrupted.")
-      }
-
-      // Validate if it's actually a resume
-      if (!validateResume(text)) {
-        setIsValidResume(false)
+      if (!fileContent || fileContent.trim().length < 50) {
         setError(
-          "❌ This does not appear to be a resume. Please ensure the file contains:\n• Professional experience\n• Education details\n• Skills section\n• Contact information",
+          "❌ Could not extract enough text from file. Please ensure:\n• The file is not empty\n• The file is readable and not corrupted\n• The file contains at least 50 characters of text",
         )
         setIsAnalyzing(false)
-        clearInterval(progressInterval)
         return
       }
 
-      setIsValidResume(true)
-      setProgress(90)
+      const result = await validateAndAnalyzeResume(fileContent)
+      setAnalysis(result)
 
-      const result = await analyzeResume(text, file.name)
-      setProgress(100)
-
-      setTimeout(() => {
-        setAnalysisResult(result)
-        setIsAnalyzing(false)
-        clearInterval(progressInterval)
-      }, 500)
+      if (!result.isResume) {
+        setError("❌ This does not appear to be a valid resume.\n\n" + result.feedback)
+      }
     } catch (err) {
-      console.error("Error analyzing resume:", err)
+      console.error("Error processing file:", err)
       setError(
-        `❌ Error: ${err instanceof Error ? err.message : "Please try another file or ensure it's a valid resume format."}`,
+        `❌ Error processing file: ${err instanceof Error ? err.message : "Unknown error"}\n\nPlease try another file.`,
       )
+    } finally {
       setIsAnalyzing(false)
-      clearInterval(progressInterval)
     }
   }
 
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return "text-green-600"
-    if (score >= 65) return "text-yellow-600"
-    return "text-red-600"
-  }
+  const downloadAnalysisReport = () => {
+    if (!analysis) return
 
-  const getScoreIcon = (score: number) => {
-    if (score >= 80) return <CheckCircle className="h-5 w-5 text-green-600 animate-pulse" />
-    if (score >= 65) return <AlertCircle className="h-5 w-5 text-yellow-600 animate-pulse" />
-    return <XCircle className="h-5 w-5 text-red-600 animate-pulse" />
-  }
+    const pdf = new jsPDF()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const margin = 15
+    const maxWidth = pageWidth - margin * 2
 
-  const handleDownloadReport = () => {
-    if (analysisResult && file) {
-      generateReportPDF(analysisResult, `ATS-Report-${analysisResult.resumeSummary.name}.pdf`)
+    let yPosition = margin
+
+    // Header
+    pdf.setFont("Helvetica", "bold")
+    pdf.setFontSize(20)
+    pdf.setTextColor(99, 102, 241)
+    pdf.text("Resume ATS Analysis Report", margin, yPosition)
+
+    yPosition += 15
+
+    // ATS Score
+    pdf.setFont("Helvetica", "bold")
+    pdf.setFontSize(16)
+    pdf.setTextColor(0, 0, 0)
+    pdf.text(`ATS Score: ${analysis.atsScore}/100`, margin, yPosition)
+
+    yPosition += 12
+
+    // Summary
+    pdf.setFont("Helvetica", "bold")
+    pdf.setFontSize(12)
+    pdf.text("Summary:", margin, yPosition)
+
+    yPosition += 6
+
+    pdf.setFont("Helvetica", "normal")
+    pdf.setFontSize(11)
+    const summaryLines = pdf.splitTextToSize(analysis.summary, maxWidth)
+    summaryLines.forEach((line: string) => {
+      if (yPosition > pageHeight - margin) {
+        pdf.addPage()
+        yPosition = margin
+      }
+      pdf.text(line, margin, yPosition)
+      yPosition += 5
+    })
+
+    yPosition += 8
+
+    // Strengths
+    if (analysis.strengths.length > 0) {
+      pdf.setFont("Helvetica", "bold")
+      pdf.setFontSize(12)
+      pdf.setTextColor(34, 197, 94)
+      pdf.text("Strengths:", margin, yPosition)
+      yPosition += 6
+
+      pdf.setFont("Helvetica", "normal")
+      pdf.setFontSize(11)
+      pdf.setTextColor(0, 0, 0)
+      analysis.strengths.forEach((strength) => {
+        if (yPosition > pageHeight - margin) {
+          pdf.addPage()
+          yPosition = margin
+        }
+        const lines = pdf.splitTextToSize(strength, maxWidth - 10)
+        lines.forEach((line: string) => {
+          pdf.text(`• ${line}`, margin + 5, yPosition)
+          yPosition += 5
+        })
+      })
     }
+
+    yPosition += 6
+
+    // Improvements
+    if (analysis.improvements.length > 0) {
+      if (yPosition > pageHeight - margin * 2) {
+        pdf.addPage()
+        yPosition = margin
+      }
+      pdf.setFont("Helvetica", "bold")
+      pdf.setFontSize(12)
+      pdf.setTextColor(245, 158, 11)
+      pdf.text("Areas for Improvement:", margin, yPosition)
+      yPosition += 6
+
+      pdf.setFont("Helvetica", "normal")
+      pdf.setFontSize(11)
+      pdf.setTextColor(0, 0, 0)
+      analysis.improvements.forEach((improvement) => {
+        if (yPosition > pageHeight - margin) {
+          pdf.addPage()
+          yPosition = margin
+        }
+        const lines = pdf.splitTextToSize(improvement, maxWidth - 10)
+        lines.forEach((line: string) => {
+          pdf.text(`• ${line}`, margin + 5, yPosition)
+          yPosition += 5
+        })
+      })
+    }
+
+    yPosition += 6
+
+    // Keywords
+    if (yPosition > pageHeight - margin * 2) {
+      pdf.addPage()
+      yPosition = margin
+    }
+    pdf.setFont("Helvetica", "bold")
+    pdf.setFontSize(12)
+    pdf.setTextColor(0, 0, 0)
+    pdf.text("Keywords Found:", margin, yPosition)
+    yPosition += 6
+
+    pdf.setFont("Helvetica", "normal")
+    pdf.setFontSize(10)
+    const keywordText = analysis.keywords.join(", ") || "None detected"
+    const keywordLines = pdf.splitTextToSize(keywordText, maxWidth)
+    keywordLines.forEach((line: string) => {
+      if (yPosition > pageHeight - margin) {
+        pdf.addPage()
+        yPosition = margin
+      }
+      pdf.text(line, margin, yPosition)
+      yPosition += 4
+    })
+
+    yPosition += 6
+
+    // Feedback
+    if (yPosition > pageHeight - margin * 2) {
+      pdf.addPage()
+      yPosition = margin
+    }
+    pdf.setFont("Helvetica", "bold")
+    pdf.setFontSize(12)
+    pdf.setTextColor(0, 0, 0)
+    pdf.text("Detailed Feedback:", margin, yPosition)
+    yPosition += 6
+
+    pdf.setFont("Helvetica", "normal")
+    pdf.setFontSize(11)
+    const feedbackLines = pdf.splitTextToSize(analysis.feedback, maxWidth)
+    feedbackLines.forEach((line: string) => {
+      if (yPosition > pageHeight - margin) {
+        pdf.addPage()
+        yPosition = margin
+      }
+      pdf.text(line, margin, yPosition)
+      yPosition += 5
+    })
+
+    pdf.save(`Resume-Analysis-${Date.now()}.pdf`)
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-900 to-slate-950 relative overflow-hidden">
-      {/* Animated Background */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute w-96 h-96 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-full blur-3xl animate-pulse top-0 left-0" />
-        <div
-          className="absolute w-80 h-80 bg-gradient-to-r from-indigo-500/20 to-blue-500/20 rounded-full blur-3xl animate-pulse bottom-0 right-0"
-          style={{ animationDelay: "1s" }}
-        />
-      </div>
+    <div className="space-y-8">
+      {/* Upload Card */}
+      <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-8">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-white mb-4">Upload Your Resume</h2>
+          <p className="text-slate-300 mb-8">Drag and drop or click to upload your resume for instant ATS analysis</p>
 
-      <nav className="bg-black/40 border-b border-purple-500/20 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <Link href="/" className="flex items-center space-x-3 group">
-              <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-2 rounded-lg shadow-lg group-hover:shadow-pink-500/50 group-hover:scale-110 transition-all duration-300">
-                <FileText className="h-6 w-6 text-white group-hover:animate-pulse" />
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.currentTarget.classList.add("bg-purple-500/10")
+            }}
+            onDragLeave={(e) => {
+              e.currentTarget.classList.remove("bg-purple-500/10")
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.currentTarget.classList.remove("bg-purple-500/10")
+              const droppedFile = e.dataTransfer.files?.[0]
+              if (droppedFile) {
+                handleFileUpload({ target: { files: e.dataTransfer.files } } as any)
+              }
+            }}
+            className="border-2 border-dashed border-purple-500/50 hover:border-purple-500 rounded-lg p-12 cursor-pointer transition-all duration-300 hover:bg-purple-500/5"
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,.txt"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <div className="text-center">
+              <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                <Upload className="w-8 h-8 text-white" />
               </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                ATS Resume Analyzer
-              </span>
-            </Link>
-            <div className="flex items-center space-x-4">
-              <Link href="/ai-generator">
-                <Button
-                  size="sm"
-                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50"
-                >
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  AI Generator
-                </Button>
-              </Link>
-              <Link href="/builder">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-purple-500/30 text-purple-300 hover:bg-purple-950/50 bg-transparent"
-                >
-                  Resume Builder
-                </Button>
-              </Link>
+              <p className="text-white font-semibold mb-2">Click to upload or drag and drop</p>
+              <p className="text-slate-400">PDF, DOCX or TXT (Max. 10MB)</p>
             </div>
           </div>
+
+          {file && (
+            <div className="mt-4 text-sm text-slate-300">
+              Selected file: <span className="font-semibold text-purple-400">{file.name}</span>
+            </div>
+          )}
         </div>
-      </nav>
+      </Card>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 relative z-10">
-        <div
-          className={`text-center mb-12 transition-all duration-1000 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
-        >
-          <div className="inline-flex items-center px-4 py-2 bg-purple-900/50 rounded-full text-purple-300 text-sm font-medium mb-6 border border-purple-500/30 animate-pulse">
-            <Sparkles className="mr-2 h-4 w-4 animate-spin" style={{ animationDuration: "3s" }} />
-            AI-Powered ATS Analysis Engine
+      {/* Error Alert */}
+      {error && (
+        <Alert className="bg-red-500/10 border-red-500/30">
+          <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+          <AlertDescription className="text-red-200 whitespace-pre-wrap">{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Loading State */}
+      {isAnalyzing && (
+        <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-8">
+          <div className="flex items-center justify-center gap-4">
+            <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+            <div>
+              <p className="text-white font-semibold">Analyzing your resume...</p>
+              <p className="text-slate-400 text-sm">Our AI is scanning your resume for ATS compatibility</p>
+            </div>
           </div>
-          <h1 className="text-5xl font-bold text-white mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-            Resume ATS Analyzer
-          </h1>
-          <p className="text-xl text-purple-200 max-w-2xl mx-auto">
-            Upload your resume and get instant ATS compatibility score with detailed feedback and actionable insights
-          </p>
-        </div>
+        </Card>
+      )}
 
-        {!analysisResult ? (
-          <div className="max-w-2xl mx-auto">
-            <Card
-              className={`border-2 border-dashed transition-all duration-500 backdrop-blur-xl ${
-                isDragOver
-                  ? "border-purple-400 bg-purple-900/30 scale-105 shadow-2xl shadow-purple-500/50"
-                  : isAnalyzing
-                    ? "border-purple-400/50 bg-purple-900/20"
-                    : "border-purple-500/30 hover:border-purple-500/60 hover:shadow-xl hover:shadow-purple-500/20 bg-slate-900/40"
-              }`}
-            >
-              <CardContent className="p-12">
-                <div
-                  className="text-center"
-                  onDrop={handleDrop}
-                  onDragOver={(e) => {
-                    e.preventDefault()
-                    setIsDragOver(true)
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault()
-                    setIsDragOver(false)
-                  }}
-                >
-                  {!isAnalyzing && !error ? (
-                    <div className="animate-fade-in">
-                      <div className="flex justify-center mb-6">
-                        <AnimatedRobot size="lg" />
-                      </div>
-                      <h3 className="text-3xl font-bold text-white mb-4">Upload Your Resume</h3>
-                      <p className="text-purple-200 mb-8 text-lg">
-                        Drag and drop your resume here, or click to browse files. Our AI will analyze it instantly.
-                      </p>
-                      <input
-                        type="file"
-                        accept=".pdf,.doc,.docx"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                        id="resume-upload"
-                      />
-                      <label htmlFor="resume-upload">
-                        <Button
-                          size="lg"
-                          className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 cursor-pointer shadow-lg hover:shadow-purple-500/50 text-white font-bold py-6 text-lg transform hover:scale-105 transition-all duration-300 group relative overflow-hidden"
-                          asChild
-                        >
-                          <span>
-                            <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                            <Upload className="mr-2 h-6 w-6 group-hover:animate-bounce relative z-10" />
-                            <span className="relative z-10">Choose Resume File</span>
-                            <Zap className="ml-2 h-6 w-6 group-hover:animate-pulse relative z-10" />
-                          </span>
-                        </Button>
-                      </label>
-                      <p className="text-sm text-purple-400 mt-6">Supports PDF, DOC, DOCX files up to 10MB</p>
-                    </div>
-                  ) : isAnalyzing ? (
-                    <div className="space-y-8 animate-fade-in">
-                      <div className="flex justify-center">
-                        <AnimatedRobot size="lg" showProcess={true} />
-                      </div>
-                      <div>
-                        <h3 className="text-2xl font-bold text-white mb-2">Analyzing Your Resume</h3>
-                        <p className="text-purple-300 mb-8">
-                          Our AI is scanning for ATS compatibility, keywords, and optimization opportunities...
-                        </p>
-                        <div className="w-full max-w-md mx-auto space-y-3">
-                          <Progress value={progress} className="w-full h-4 bg-purple-900/50" />
-                          <div className="flex justify-between text-sm text-purple-400">
-                            <span className="font-semibold">Scanning Resume Content</span>
-                            <span className="font-bold">{Math.round(progress)}%</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
-
-            {error && !isValidResume && (
-              <Card className="border-red-500/30 bg-red-900/20 backdrop-blur mt-6 animate-bounce-in">
-                <CardContent className="p-6">
-                  <div className="flex items-start gap-4">
-                    <FileQuestion className="h-6 w-6 text-red-500 flex-shrink-0 mt-1" />
-                    <div>
-                      <h4 className="text-lg font-bold text-red-300 mb-2">Not a Resume</h4>
-                      <p className="text-red-200 mb-3">{error}</p>
-                      <p className="text-sm text-red-300">
-                        A valid resume should include professional experience, education, and skills sections.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {error && isValidResume && (
-              <Card className="border-yellow-500/30 bg-yellow-900/20 backdrop-blur mt-6 animate-bounce-in">
-                <CardContent className="p-6">
-                  <div className="flex items-start gap-4">
-                    <AlertCircle className="h-6 w-6 text-yellow-500 flex-shrink-0 mt-1" />
-                    <div>
-                      <h4 className="text-lg font-bold text-yellow-300 mb-2">Processing Error</h4>
-                      <p className="text-yellow-200">{error}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-8 animate-fade-in">
-            {/* Main Score Card */}
-            <div className="grid lg:grid-cols-3 gap-6">
-              <Card className="lg:col-span-2 border-purple-500/30 bg-gradient-to-br from-purple-900/40 to-pink-900/40 backdrop-blur-xl hover:shadow-2xl hover:shadow-purple-500/30 transition-all duration-500 hover:-translate-y-1">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-white text-2xl flex items-center gap-3">
-                        <TrendingUp className="h-6 w-6 text-purple-400" />
-                        ATS Compatibility Score
-                      </CardTitle>
-                      <CardDescription className="text-purple-300 text-base mt-2">
-                        Real-time analysis based on resume content
-                      </CardDescription>
-                    </div>
-                    {getScoreIcon(analysisResult.score)}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-8 mb-6">
-                    <div className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
-                      {analysisResult.score}
-                    </div>
-                    <div className="flex-1">
-                      <Progress value={analysisResult.score} className="w-full h-4 bg-slate-700" />
-                      <div className="mt-3 text-sm text-purple-300">
-                        {analysisResult.score >= 80
-                          ? "✅ Excellent - Your resume is well-optimized"
-                          : analysisResult.score >= 65
-                            ? "⚠️ Good - Room for improvement"
-                            : "❌ Needs work - Apply suggestions below"}
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-purple-200 leading-relaxed">{analysisResult.summary}</p>
-                </CardContent>
-              </Card>
-
-              <Card className="border-purple-500/30 bg-slate-900/40 backdrop-blur-xl hover:shadow-lg hover:shadow-purple-500/30 transition-all duration-500">
-                <CardHeader>
-                  <CardTitle className="text-white">Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button
-                    onClick={handleDownloadReport}
-                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50 text-white font-bold"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Download PDF Report
-                  </Button>
-                  <Button
-                    asChild
-                    variant="outline"
-                    className="w-full border-purple-500/30 text-purple-300 hover:bg-purple-950/50 bg-transparent"
-                  >
-                    <Link href="/ai-generator">
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Generate with AI
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    variant="outline"
-                    className="w-full border-purple-500/30 text-purple-300 hover:bg-purple-950/50 bg-transparent"
-                  >
-                    <Link href="/builder">
-                      <FileText className="mr-2 h-4 w-4" />
-                      Use Builder
-                    </Link>
-                  </Button>
-                </CardContent>
-              </Card>
+      {/* Analysis Results */}
+      {analysis && !isAnalyzing && (
+        <div className="space-y-6">
+          {/* ATS Score Card */}
+          <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-8">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
+              <div>
+                <h3 className="text-2xl font-bold text-white mb-2">ATS Compatibility Score</h3>
+                <p className="text-slate-400">
+                  {analysis.atsScore >= 80
+                    ? "✓ Excellent - Your resume is well-optimized"
+                    : analysis.atsScore >= 60
+                      ? "◐ Good - Room for improvements"
+                      : "✗ Needs Work - Apply suggestions below"}
+                </p>
+              </div>
+              <Button
+                onClick={downloadAnalysisReport}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 whitespace-nowrap"
+              >
+                <Download size={18} className="mr-2" />
+                Download PDF Report
+              </Button>
             </div>
 
-            {/* Resume Summary */}
-            <Card className="border-purple-500/30 bg-slate-900/40 backdrop-blur-xl hover:shadow-lg hover:shadow-purple-500/20 transition-all duration-500">
-              <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
-                  <User className="h-6 w-6 text-purple-400" />
-                  Extracted Resume Information
-                </CardTitle>
-                <CardDescription className="text-purple-300">Key details our AI found in your resume</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
-                      <p className="text-sm text-purple-400 font-semibold mb-1">Full Name</p>
-                      <h3 className="text-xl font-bold text-white">{analysisResult.resumeSummary.name}</h3>
-                    </div>
-                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
-                      <p className="text-sm text-purple-400 font-semibold mb-1">Professional Title</p>
-                      <p className="text-white font-semibold">{analysisResult.resumeSummary.title}</p>
-                    </div>
-                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
-                      <p className="text-sm text-purple-400 font-semibold mb-1">Experience Level</p>
-                      <p className="text-white">{analysisResult.resumeSummary.experience}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
-                      <p className="text-sm text-purple-400 font-semibold mb-2">Contact Information</p>
-                      <div className="space-y-2">
-                        <p className="text-sm text-purple-300">📧 {analysisResult.resumeSummary.contact.email}</p>
-                        <p className="text-sm text-purple-300">📱 {analysisResult.resumeSummary.contact.phone}</p>
-                        <p className="text-sm text-purple-300">📍 {analysisResult.resumeSummary.contact.location}</p>
-                      </div>
-                    </div>
-                    <div className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
-                      <p className="text-sm text-purple-400 font-semibold mb-2">Education</p>
-                      <p className="text-white">{analysisResult.resumeSummary.education}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 bg-slate-800/50 p-4 rounded-lg border border-purple-500/20">
-                  <p className="text-sm text-purple-400 font-semibold mb-3">Top Skills Found</p>
-                  <div className="flex flex-wrap gap-2">
-                    {analysisResult.resumeSummary.skills.map((skill, index) => (
-                      <Badge
-                        key={index}
-                        className="bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg hover:shadow-purple-500/50 animate-fade-in"
-                        style={{ animationDelay: `${index * 0.05}s` }}
-                      >
-                        {skill}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Strengths and Improvements */}
-            <div className="grid lg:grid-cols-2 gap-6">
-              <Card className="border-green-500/30 bg-green-950/20 backdrop-blur-xl hover:shadow-lg hover:shadow-green-500/20 transition-all duration-500">
-                <CardHeader>
-                  <CardTitle className="text-green-400 flex items-center gap-2">
-                    <CheckCircle className="h-6 w-6" />
-                    What You're Doing Well
-                  </CardTitle>
-                  <CardDescription className="text-green-300">Keep these strengths in your resume</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    {analysisResult.strengths.map((strength, index) => (
-                      <li
-                        key={index}
-                        className="flex items-start gap-3 text-green-200 animate-fade-in"
-                        style={{ animationDelay: `${index * 0.1}s` }}
-                      >
-                        <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-                        <span>{strength}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-
-              <Card className="border-orange-500/30 bg-orange-950/20 backdrop-blur-xl hover:shadow-lg hover:shadow-orange-500/20 transition-all duration-500">
-                <CardHeader>
-                  <CardTitle className="text-orange-400 flex items-center gap-2">
-                    <AlertCircle className="h-6 w-6" />
-                    Areas for Improvement
-                  </CardTitle>
-                  <CardDescription className="text-orange-300">Apply these changes to boost your score</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    {analysisResult.improvements.map((improvement, index) => (
-                      <li
-                        key={index}
-                        className="flex items-start gap-3 text-orange-200 animate-fade-in"
-                        style={{ animationDelay: `${index * 0.1}s` }}
-                      >
-                        <AlertCircle className="h-5 w-5 text-orange-500 flex-shrink-0 mt-0.5" />
-                        <span>{improvement}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+                  {analysis.atsScore}
+                </span>
+                <span className="text-slate-400 text-xl">/100</span>
+              </div>
+              <Progress value={analysis.atsScore} className="h-4 bg-slate-700" />
             </div>
 
-            {/* Section Scores */}
-            <Card className="border-purple-500/30 bg-slate-900/40 backdrop-blur-xl hover:shadow-lg hover:shadow-purple-500/20 transition-all duration-500">
-              <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
-                  <Award className="h-6 w-6 text-purple-400" />
-                  Detailed Section Analysis
-                </CardTitle>
-                <CardDescription className="text-purple-300">Score breakdown for each resume section</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-5">
-                  {analysisResult.sections.map((section, index) => (
-                    <div
+            <p className="text-slate-300 leading-relaxed">{analysis.summary}</p>
+          </Card>
+
+          {/* Strengths */}
+          {analysis.strengths.length > 0 && (
+            <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-emerald-500/20 p-8">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <CheckCircle className="text-emerald-500" size={24} />
+                Strengths
+              </h3>
+              <ul className="space-y-3">
+                {analysis.strengths.map((strength, index) => (
+                  <li key={index} className="flex items-start gap-3 text-slate-300">
+                    <span className="text-emerald-500 font-bold text-lg leading-none mt-1">✓</span>
+                    <span className="bg-emerald-500/5 p-3 rounded-lg border border-emerald-500/20 flex-1">
+                      {strength}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {/* Improvements */}
+          {analysis.improvements.length > 0 && (
+            <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-amber-500/20 p-8">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <AlertCircle className="text-amber-500" size={24} />
+                Areas for Improvement
+              </h3>
+              <ul className="space-y-3">
+                {analysis.improvements.map((improvement, index) => (
+                  <li key={index} className="flex items-start gap-3 text-slate-300">
+                    <span className="text-amber-500 font-bold text-lg leading-none mt-1">◐</span>
+                    <span className="bg-amber-500/5 p-3 rounded-lg border border-amber-500/20 flex-1">
+                      {improvement}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {/* Keywords */}
+          <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-purple-500/20 p-8">
+            <h3 className="text-xl font-bold text-white mb-6">Keywords Analysis</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <p className="text-slate-300 font-semibold mb-3">Found Keywords ({analysis.keywords.length}):</p>
+                <div className="flex flex-wrap gap-2">
+                  {analysis.keywords.length > 0 ? (
+                    analysis.keywords.map((keyword, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-2 bg-emerald-500/20 text-emerald-300 rounded-full text-sm border border-emerald-500/30 font-medium"
+                      >
+                        {keyword}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-slate-400">None detected</span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-slate-300 font-semibold mb-3">
+                  Missing Keywords ({analysis.missingKeywords.length}):
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {analysis.missingKeywords.slice(0, 6).map((keyword, index) => (
+                    <span
                       key={index}
-                      className="bg-slate-800/50 p-4 rounded-lg border border-purple-500/20 hover:border-purple-500/40 transition-all animate-fade-in"
-                      style={{ animationDelay: `${index * 0.1}s` }}
+                      className="px-3 py-2 bg-red-500/20 text-red-300 rounded-full text-sm border border-red-500/30 font-medium"
                     >
-                      <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-bold text-white text-lg">{section.name}</h4>
-                        <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
-                          {section.score}%
-                        </div>
-                      </div>
-                      <Progress value={section.score} className="mb-3 h-3 bg-slate-700" />
-                      <p className="text-sm text-purple-200">{section.feedback}</p>
-                    </div>
+                      {keyword}
+                    </span>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Keyword Analysis */}
-            <div className="grid lg:grid-cols-2 gap-6">
-              <Card className="border-green-500/30 bg-green-950/20 backdrop-blur-xl hover:shadow-lg hover:shadow-green-500/20 transition-all duration-500">
-                <CardHeader>
-                  <CardTitle className="text-green-400 flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5" />
-                    Found Keywords ({analysisResult.keywords.found.length})
-                  </CardTitle>
-                  <CardDescription className="text-green-300">ATS-friendly keywords in your resume</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {analysisResult.keywords.found.map((keyword, index) => (
-                      <Badge
-                        key={index}
-                        className="bg-green-900 text-green-200 border border-green-500/50 hover:bg-green-800 animate-fade-in"
-                        style={{ animationDelay: `${index * 0.05}s` }}
-                      >
-                        {keyword}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-red-500/30 bg-red-950/20 backdrop-blur-xl hover:shadow-lg hover:shadow-red-500/20 transition-all duration-500">
-                <CardHeader>
-                  <CardTitle className="text-red-400 flex items-center gap-2">
-                    <XCircle className="h-5 w-5" />
-                    Missing Keywords ({analysisResult.keywords.missing.length})
-                  </CardTitle>
-                  <CardDescription className="text-red-300">Consider adding these to improve ATS score</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {analysisResult.keywords.missing.map((keyword, index) => (
-                      <Badge
-                        key={index}
-                        className="bg-red-900 text-red-200 border border-red-500/50 hover:bg-red-800 animate-fade-in"
-                        style={{ animationDelay: `${index * 0.05}s` }}
-                      >
-                        {keyword}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              </div>
             </div>
+          </Card>
 
-            {/* Next Steps */}
-            <Card className="border-purple-500/30 bg-gradient-to-r from-purple-900/40 to-pink-900/40 backdrop-blur-xl">
-              <CardHeader>
-                <CardTitle className="text-white flex items-center gap-2">
-                  <Sparkles className="h-6 w-6 text-purple-400 animate-spin" />
-                  Recommended Next Steps
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ol className="space-y-3 text-purple-200">
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 font-bold text-purple-400">1.</span>
-                    <span>Incorporate missing keywords naturally into your resume</span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 font-bold text-purple-400">2.</span>
-                    <span>Enhance low-scoring sections with more detail and quantifiable metrics</span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 font-bold text-purple-400">3.</span>
-                    <span>Use our AI Generator to create multiple optimized versions</span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 font-bold text-purple-400">4.</span>
-                    <span>Tailor your resume for specific job postings</span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="flex-shrink-0 font-bold text-purple-400">5.</span>
-                    <span>Re-upload to verify improvements</span>
-                  </li>
-                </ol>
-
-                <div className="mt-6 flex gap-3">
-                  <Button
-                    onClick={() => {
-                      setAnalysisResult(null)
-                      setFile(null)
-                    }}
-                    className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50"
-                  >
-                    <Upload className="mr-2 h-4 w-4" />
-                    Analyze Another Resume
-                  </Button>
-                  <Button
-                    asChild
-                    className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-lg hover:shadow-purple-500/50"
-                  >
-                    <Link href="/ai-generator">
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      Generate New Resume
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </div>
-
-      <style jsx>{`
-        @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        @keyframes bounce-in {
-          0% {
-            opacity: 0;
-            transform: scale(0.95) translateY(10px);
-          }
-          100% {
-            opacity: 1;
-            transform: scale(1) translateY(0);
-          }
-        }
-
-        .animate-fade-in {
-          animation: fade-in 0.5s ease-out forwards;
-          opacity: 0;
-        }
-
-        .animate-bounce-in {
-          animation: bounce-in 0.6s ease-out forwards;
-        }
-      `}</style>
+          {/* Feedback */}
+          <Card className="bg-gradient-to-br from-slate-900 to-slate-800 border-blue-500/20 p-8">
+            <h3 className="text-xl font-bold text-white mb-4">Detailed Feedback</h3>
+            <p className="text-slate-300 leading-relaxed mb-6">{analysis.feedback}</p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                onClick={() => {
+                  setAnalysis(null)
+                  setFile(null)
+                  setError(null)
+                }}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 flex-1"
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Analyze Another Resume
+              </Button>
+              <a href="/builder" className="flex-1">
+                <Button className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700">
+                  Build Better Resume
+                </Button>
+              </a>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,36 +1,41 @@
 import { streamText } from "ai"
 import { openai } from "@ai-sdk/openai"
+import { type NextRequest, NextResponse } from "next/server"
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const { messages } = await request.json()
 
-    const systemPrompt = `You are an expert resume coach and career advisor. You help users:
-1. Improve their resumes for ATS optimization
-2. Tailor resumes for specific job postings
-3. Answer questions about career development
-4. Provide feedback on resume content
-5. Suggest skills and keywords to add
-
-Be concise, professional, and actionable. Provide specific recommendations when possible.`
-
-    const result = await streamText({
-      model: openai("gpt-4o"),
-      system: systemPrompt,
-      messages: messages.map((m: any) => ({
-        role: m.role,
-        content: m.content,
-      })),
-    })
-
-    let fullText = ""
-    for await (const chunk of result.textStream) {
-      fullText += chunk
+    if (!messages || !Array.isArray(messages)) {
+      return NextResponse.json({ error: "Invalid messages format" }, { status: 400 })
     }
 
-    return Response.json({ message: fullText })
+    const formattedMessages = messages.map((msg: any) => ({
+      role: msg.sender === "user" ? "user" : "assistant",
+      content: msg.text,
+    }))
+
+    const { textStream } = await streamText({
+      model: openai("gpt-4o"),
+      system: `You are a professional resume coach and ATS optimization expert. You help users:
+- Optimize their resumes for ATS systems
+- Write strong bullet points with metrics
+- Choose appropriate keywords
+- Structure their resume effectively
+- Answer questions about job applications and career development
+
+Provide concise, actionable advice. Be encouraging and supportive.`,
+      messages: formattedMessages,
+    })
+
+    let fullResponse = ""
+    for await (const chunk of textStream) {
+      fullResponse += chunk
+    }
+
+    return NextResponse.json({ message: fullResponse })
   } catch (error) {
-    console.error("Error in chat:", error)
-    return Response.json({ error: "Failed to process message" }, { status: 500 })
+    console.error("Chat error:", error)
+    return NextResponse.json({ error: "Failed to process message" }, { status: 500 })
   }
 }

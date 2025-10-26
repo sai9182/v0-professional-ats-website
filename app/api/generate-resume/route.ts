@@ -1,43 +1,48 @@
 import { generateText } from "ai"
 import { openai } from "@ai-sdk/openai"
-import { type NextRequest, NextResponse } from "next/server"
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
-    const { jobDescription, userBackground } = await request.json()
+    const { userDetails, jobDescription } = await request.json()
 
-    if (!jobDescription || !userBackground) {
-      return NextResponse.json({ error: "Missing job description or user background" }, { status: 400 })
+    if (!userDetails || !jobDescription) {
+      return Response.json({ error: "Missing required fields" }, { status: 400 })
     }
+
+    const prompt = `You are an expert resume writer. Create a professional, ATS-optimized resume based on the following information:
+
+**User Details:**
+- Name: ${userDetails.name}
+- Email: ${userDetails.email}
+- Phone: ${userDetails.phone}
+- Address: ${userDetails.address}
+- Education: ${userDetails.education}
+- Experience: ${userDetails.experience}
+- Skills: ${userDetails.skills}
+
+**Target Job Description:**
+${jobDescription}
+
+Please create a professional resume that:
+1. Is tailored to match the job requirements
+2. Highlights relevant skills and experience
+3. Uses professional formatting
+4. Includes all contact information
+5. Is optimized for ATS (Applicant Tracking Systems)
+6. Uses action verbs and quantifiable achievements where possible
+
+Format the resume in a clean, readable text format with clear sections for Contact Info, Summary, Experience, Education, and Skills.`
 
     const { text } = await generateText({
       model: openai("gpt-4o"),
-      prompt: `You are an expert resume writer and ATS optimization specialist. 
-      
-Create a professional, ATS-optimized resume based on the following:
-
-JOB DESCRIPTION:
-${jobDescription}
-
-APPLICANT BACKGROUND:
-${userBackground}
-
-Generate a complete resume that:
-1. Matches the job description requirements
-2. Uses ATS-friendly formatting (simple structure, no columns)
-3. Incorporates relevant keywords from the job posting
-4. Highlights achievements with metrics and numbers
-5. Uses strong action verbs
-6. Follows standard resume sections: Contact, Professional Summary, Experience, Education, Skills
-
-Format the resume professionally with clear sections. Make it compelling and tailored to the job.`,
+      prompt,
       system:
-        "You are a professional resume writer who creates ATS-optimized resumes. Always provide well-structured, keyword-rich resumes that pass ATS systems.",
+        "You are an expert resume writer who creates ATS-optimized, professional resumes tailored to specific job requirements.",
     })
 
-    return NextResponse.json({ resume: text })
+    return Response.json({ resume: text })
   } catch (error) {
     console.error("Resume generation error:", error)
-    return NextResponse.json({ error: "Failed to generate resume" }, { status: 500 })
+    return Response.json({ error: "Failed to generate resume" }, { status: 500 })
   }
 }
